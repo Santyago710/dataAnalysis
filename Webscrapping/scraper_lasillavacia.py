@@ -1,8 +1,20 @@
-"""
-Web Scraper - La Silla Vacía / Opinión
-======================================
-Extrae: títulos, autores, fechas y URLs de artículos de opinión.
-Requiere: pip install playwright && playwright install chromium
+"""La Silla Vacia Opinion scraper.
+
+This script crawls the opinion section of La Silla Vacia and extracts article
+metadata and full-text content using Playwright.
+
+Extracted fields include:
+- title
+- author
+- publication date
+- article URL
+- summary excerpt
+- full article content
+- tags/categories
+
+Requirements:
+    pip install playwright
+    playwright install chromium
 """
 
 import pandas as pd
@@ -12,15 +24,15 @@ from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
-# ─── Configuración ──────────────────────────────────────────────────────────
+# ─── Configuration ─────────────────────────────────────────────────────────
 
 BASE_URL       = "https://www.lasillavacia.com"
 OPINION_URL    = f"{BASE_URL}/opinion/"
 MAX_PAGINAS    = 5
-DELAY          = 2          # segundos entre páginas
+DELAY          = 2          # Delay in seconds between page requests.
 OUTPUT_DIR     = Path(__file__).resolve().parent / "datalake_bronze"
 OUTPUT_CSV     = OUTPUT_DIR / f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.csv"
-HEADLESS       = False       # False → abre ventana del navegador (útil para depurar)
+HEADLESS       = False       # False opens a visible browser window for debugging.
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,20 +42,30 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
-# ─── Extracción ─────────────────────────────────────────────────────────────
+# ─── Listing Extraction ────────────────────────────────────────────────────
 
 def extraer_articulos(page) -> list[dict]:
-    """Extrae artículos del DOM ya renderizado por el navegador."""
+    """Extract article cards from a rendered listing page.
+
+    The function uses resilient selector fallbacks to handle moderate HTML
+    structure changes in the target site.
+
+    Args:
+        page: A Playwright page already navigated to an opinion listing.
+
+    Returns:
+        A list of dictionaries with basic article metadata.
+    """
     articulos = []
 
-    # Esperar a que cargue contenido principal
+    # Wait until the main content area is available.
     try:
         page.wait_for_selector("article, .card, h2 a, h3 a", timeout=10_000)
     except PlaywrightTimeout:
-        log.warning("Timeout esperando artículos — puede que la página esté vacía.")
+        log.warning("Timeout while waiting for article cards. The page may be empty.")
         return []
 
-    # Intentar con <article> primero, luego fallbacks
+    # Prefer semantic <article> nodes first, then fallback selectors.
     items = page.query_selector_all("article")
     if not items:
         items = page.query_selector_all(".card, .post-card, [class*='article']")
@@ -53,7 +75,7 @@ def extraer_articulos(page) -> list[dict]:
     for item in items:
         titulo = autor = fecha = url = extracto = ""
 
-        # ── Título ──
+        # ── Title ──
         for sel in ["h1", "h2", "h3", ".title", "[class*='title']"]:
             t = item.query_selector(sel)
             if t:
@@ -66,7 +88,7 @@ def extraer_articulos(page) -> list[dict]:
             href = a.get_attribute("href") or ""
             url = href if href.startswith("http") else BASE_URL + href
 
-        # ── Autor ──
+        # ── Author ──
         for sel in [".author", ".autor", ".byline", "[class*='author']",
                     "[class*='autor']", "[rel='author']"]:
             t = item.query_selector(sel)
@@ -74,14 +96,14 @@ def extraer_articulos(page) -> list[dict]:
                 autor = t.inner_text().strip()
                 break
 
-        # ── Fecha ──
+        # ── Date ──
         for sel in ["time", "[datetime]", ".date", ".fecha", "[class*='date']"]:
             t = item.query_selector(sel)
             if t:
                 fecha = t.get_attribute("datetime") or t.inner_text().strip()
                 break
 
-        # ── Extracto ──
+        # ── Excerpt ──
         for sel in ["p", ".excerpt", ".summary", "[class*='excerpt']"]:
             t = item.query_selector(sel)
             if t:
@@ -99,9 +121,9 @@ def extraer_articulos(page) -> list[dict]:
                 "extracto": extracto,
             })
 
-    # Fallback: si no hubo <article>, buscar h2/h3 con enlace directamente
+    # Fallback strategy when no card containers are detected.
     if not articulos:
-        log.warning("No se encontraron <article>. Probando fallback h2/h3...")
+        log.warning("No <article> nodes detected. Trying direct h2/h3 link fallback.")
         for a in page.query_selector_all("h2 a, h3 a"):
             titulo = a.inner_text().strip()
             href   = a.get_attribute("href") or ""
@@ -116,14 +138,23 @@ def extraer_articulos(page) -> list[dict]:
 
 
 def siguiente_pagina(page, pagina_actual: int) -> str | None:
-    """Detecta la URL de la siguiente página."""
-    # Patrón 1: enlace rel="next"
+    """Build or detect the URL for the next listing page.
+
+    Args:
+        page: Current Playwright page on the listing view.
+        pagina_actual: Current page number.
+
+    Returns:
+        The best candidate URL for the next page, or ``None`` if no candidate
+        can be inferred.
+    """
+    # Pattern 1: explicit rel="next" link.
     next_a = page.query_selector("a[rel='next']")
     if next_a:
         href = next_a.get_attribute("href") or ""
         return href if href.startswith("http") else BASE_URL + href
 
-    # Patrón 2: número de página en URL
+    # Pattern 2: derive URL by expected pagination format.
     siguiente = pagina_actual + 1
     for patron in [
         f"{OPINION_URL}page/{siguiente}/",
@@ -134,16 +165,22 @@ def siguiente_pagina(page, pagina_actual: int) -> str | None:
         if enlace:
             return patron
 
-    return f"{OPINION_URL}page/{siguiente}/"   # intento por defecto
+    return f"{OPINION_URL}page/{siguiente}/"   # Default attempt.
 
 
-# ─── Scraper de artículo individual ─────────────────────────────────────────
+# ─── Article Detail Extraction ─────────────────────────────────────────────
 
 def scrape_detalle(page, url: str) -> dict:
-    """
-    Navega al artículo y extrae:
-      - contenido: texto completo del artículo
-      - etiquetas: tags/categorías separados por coma
+    """Extract full-text content and tags from an article URL.
+
+    Args:
+        page: Reusable Playwright page instance.
+        url: Absolute article URL.
+
+    Returns:
+        A dictionary with:
+        - ``contenido``: full article text when available.
+        - ``etiquetas``: comma-separated tag list.
     """
     resultado = {"contenido": "", "etiquetas": ""}
 
@@ -158,7 +195,7 @@ def scrape_detalle(page, url: str) -> dict:
         log.warning(f"  Error en artículo {url}: {e}")
         return resultado
 
-    # ── Contenido del artículo ──
+    # ── Full article content ──
     for sel in [
         ".post-content", ".entry-content", ".article-content",
         "[class*='content__body']", "[class*='article__body']",
@@ -171,8 +208,8 @@ def scrape_detalle(page, url: str) -> dict:
                 resultado["contenido"] = texto
                 break
 
-    # ── Etiquetas / Tags ──
-    # Selector exacto: <span class="tags-links"> ... <a rel="tag">...</a>
+    # ── Tags / Categories ──
+    # Exact selector pattern: <span class="tags-links"> ... <a rel="tag">...
     etiquetas = []
 
     tags_links = page.query_selector_all(".tags-links a[rel='tag']")
@@ -181,7 +218,7 @@ def scrape_detalle(page, url: str) -> dict:
         if texto:
             etiquetas.append(texto)
 
-    # Fallback: cualquier a[rel='tag'] en la página
+    # Fallback: match any tag link present on the page.
     if not etiquetas:
         for t in page.query_selector_all("a[rel='tag']"):
             texto = t.inner_text().strip()
@@ -192,16 +229,17 @@ def scrape_detalle(page, url: str) -> dict:
     return resultado
 
 
-# ─── Main ────────────────────────────────────────────────────────────────────
+# ─── Main Workflow ─────────────────────────────────────────────────────────
 
 def main():
+    """Run the end-to-end scraping workflow and export a CSV snapshot."""
     todos = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=HEADLESS,
             args=[
-                "--disable-http2",                  # Forzar HTTP/1.1
+                "--disable-http2",                  # Force HTTP/1.1.
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -226,7 +264,7 @@ def main():
             ignore_https_errors=True,
         )
 
-        # Ocultar que es Playwright/automatización
+        # Reduce obvious automation fingerprints.
         context.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             window.chrome = { runtime: {} };
@@ -239,14 +277,14 @@ def main():
             log.info(f"Scrapeando página {pagina}: {url_actual}")
             try:
                 page.goto(url_actual, wait_until="domcontentloaded", timeout=30_000)
-                # Pausa corta para simular comportamiento humano
+                # Brief pause to avoid highly deterministic behavior.
                 time.sleep(1.5)
             except PlaywrightTimeout:
                 log.error(f"Timeout cargando página {pagina}. Deteniendo.")
                 break
             except Exception as e:
                 log.error(f"Error al cargar página {pagina}: {e}")
-                # Guardar HTML para diagnóstico
+                # Persist raw HTML for troubleshooting.
                 try:
                     html = page.content()
                     with open(f"debug_pagina_{pagina}.html", "w", encoding="utf-8") as f:
@@ -273,7 +311,7 @@ def main():
                 url_actual = url_sig
                 time.sleep(DELAY)
 
-        # ── Scrape de contenido completo y etiquetas ────────────────────
+        # ── Enrich each record with full content and tags ───────────────
         total = len([a for a in todos if a.get("url")])
         log.info(f"\nDescargando contenido y etiquetas de {total} artículos...")
 
