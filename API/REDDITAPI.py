@@ -139,7 +139,7 @@ print(" Posts políticos:", len(filtered_posts))
 # Path(): crea un objeto de ruta que funciona en Windows, Linux y Mac
 # r"...": raw string (cadena cruda) - interpreta las barras \ como literales, no como escapes
 # Esta es la carpeta donde se guardarán todos los archivos descargados
-output_path = Path(r"C:\Users\santy\OneDrive - Universidad Distrital Francisco José de Caldas\Documentos\Universidad\2026-1\dataAnalysis\dataAnalysis\datalake_bronze\dataAPI")
+output_path = Path(r"Ruta donde guardar los archivos\DataAPI")  # Cambia esta ruta a tu carpeta deseada
 
 # CREACIÓN DE CARPETA: Crea la carpeta si no existe
 # parents=True: crea también las carpetas padres (más de un nivel)
