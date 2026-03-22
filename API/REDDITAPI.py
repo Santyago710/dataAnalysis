@@ -1,187 +1,187 @@
 # ╔═══════════════════════════════════════════════════════════════╗
-# ║           IMPORTACIONES - Librerías necesarias                 ║
+# ║           IMPORTS - Required Libraries                        ║
 # ╚═══════════════════════════════════════════════════════════════╝
 
-import requests  # Librería para realizar peticiones HTTP (GET, POST, etc.)
-import json  # Librería para trabajar y convertir datos en formato JSON
-from datetime import datetime  # Para obtener fecha y hora actual del sistema
-from pathlib import Path  # Para trabajar con rutas de archivos de forma multiplataforma
+import requests  # Library to perform HTTP requests (GET, POST, etc.)
+import json  # Library to work with and convert data in JSON format
+from datetime import datetime  # To get the current system date and time
+from pathlib import Path  # To handle file paths in a cross-platform way
 
-# ─── Configuración ─────────────────────────────
+# ─── Configuration ─────────────────────────────
 
-# URL DE LA API DE REDDIT
-# r/Colombia: accede al subreddit específico de Colombia
-# new: obtiene los posts más recientes
-# limit=100: limita la respuesta a máximo 100 posts
-url = "https://api.reddit.com/r/Colombia/new?limit=100" 
+# REDDIT API URL
+# r/Colombia: accesses the specific Colombia subreddit
+# new: retrieves the most recent posts
+# limit=100: limits the response to a maximum of 100 posts
+url = "https://api.reddit.com/r/Colombia/new?limit=100"
 
-# HEADERS HTTP - Información que enviamos al servidor
-# User-Agent: simula que la petición viene desde un navegador real (Mozilla Firefox)
-# Sin esto, Reddit podría rechazar nuestra petición por ser un bot/script
+# HTTP HEADERS - Information sent to the server
+# User-Agent: simulates a request coming from a real browser (Mozilla Firefox)
+# Without this, Reddit may reject the request for being a bot/script
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 }
 
-# PALABRAS CLAVE - Términos políticos para filtrar posts relevantes
-# Lista de palabras que buscamos en los títulos y contenido de los posts
+# KEYWORDS - Political terms used to filter relevant posts
+# List of words to search for in titles and post content
 keywords = [
-    "petro", "uribe", "duque",              # Nombres de políticos colombianos
-    "gobierno", "presidente",                # Términos sobre autoridades
-    "política", "politica",                  # Tema principal (con y sin acento)
-    "elecciones", "votar",                   # Procesos electorales
-    "congreso", "senado",                    # Instituciones políticas
-    "reforma", "corrupción",                 # Cambios y problemas políticos
-    "corrupcion", "estado",                  # Variantes sin acento y poder estatal
-    "ley", "ministro"                        # Legislación y cargos públicos
+    "petro", "uribe", "duque",              # Names of Colombian politicians
+    "gobierno", "presidente",               # Government-related terms
+    "política", "politica",                 # Main topic (with and without accent)
+    "elecciones", "votar",                  # Electoral processes
+    "congreso", "senado",                   # Political institutions
+    "reforma", "corrupción",                # Changes and political issues
+    "corrupcion", "estado",                 # Variants without accent and state power
+    "ley", "ministro"                       # Legislation and political roles
 ]
 
-# ─── Petición HTTP a Reddit ─────────────────────────────
+# ─── HTTP Request to Reddit ─────────────────────────────
 
-# Realizamos una petición GET a la URL de Reddit
-# response: objeto que contiene la respuesta del servidor (código, headers, contenido)
+# Perform a GET request to the Reddit URL
+# response: object containing server response (status code, headers, content)
 response = requests.get(url, headers=headers)
 
-# VALIDACIÓN 1: Verifica que la petición fue exitosa
-# status_code 200 = OK (petición correcta)
-# status_code 404 = No encontrado
-# status_code 403 = Acceso denegado
-# status_code 429 = Demasiadas peticiones (bloqueado temporalmente)
+# VALIDATION 1: Check if the request was successful
+# status_code 200 = OK (successful request)
+# status_code 404 = Not found
+# status_code 403 = Forbidden
+# status_code 429 = Too many requests (temporarily blocked)
 if response.status_code != 200:
-    # Si la petición falla, imprime el código de error
-    print("❌ Error en la petición:", response.status_code)
-    # Muestra los primeros 300 caracteres de la respuesta para debug
+    # If the request fails, print the error code
+    print("❌ Request error:", response.status_code)
+    # Show the first 300 characters of the response for debugging
     print(response.text[:300])
-    # exit() termina completamente el programa
+    # exit() completely terminates the program
     exit()
 
-# VALIDACIÓN 2: Intenta convertir la respuesta a formato JSON
-# Si la respuesta no es JSON válido, esto genera una excepción
+# VALIDATION 2: Attempt to convert the response to JSON format
+# If the response is not valid JSON, this will raise an exception
 try:
-    # response.json() convierte el texto JSON a diccionarios y listas de Python
+    # response.json() converts JSON text into Python dictionaries and lists
     data = response.json()
 except Exception as e:
-    # Si hay error en la conversión, captura la excepción
-    print("❌ Error al convertir a JSON:", e)
-    # Muestra parte de la respuesta problematica
+    # If there is an error in conversion, catch the exception
+    print("❌ Error converting to JSON:", e)
+    # Show part of the problematic response
     print(response.text[:300])
-    # Termina el programa
+    # Terminate the program
     exit()
 
-# EXTRACCIÓN de posts de la estructura JSON
-# Reddit devuelve: {"data": {"children": [{"data": {...}}, {"data": {...}}]}}
-# .get("data", {}) obtiene el campo "data", si no existe devuelve {} (diccionario vacío)
-# .get("children", []) obtiene el campo "children" de data, si no existe devuelve [] (lista vacía)
-# Resultado: una lista con todos los posts obtenidos
+# EXTRACTION of posts from JSON structure
+# Reddit returns: {"data": {"children": [{"data": {...}}, {"data": {...}}]}}
+# .get("data", {}) gets the "data" field, or {} if it doesn't exist
+# .get("children", []) gets "children" from data, or [] if it doesn't exist
+# Result: a list containing all retrieved posts
 posts = data.get("data", {}).get("children", [])
 
-# INICIALIZACIÓN: Lista vacía donde guardaremos los posts filtrados (políticos)
+# INITIALIZATION: Empty list to store filtered (political) posts
 filtered_posts = []
 
-# ─── Filtrado de Posts ─────────────────────────────
+# ─── Post Filtering ─────────────────────────────
 
-# BUCLE: Itera sobre cada post obtenido de Reddit
+# LOOP: Iterates over each retrieved post
 for post in posts:
-    # Extrae el diccionario "data" que contiene toda la información del post
-    # Si no existe "data", utiliza un diccionario vacío {}
+    # Extract the "data" dictionary containing post information
+    # If "data" does not exist, use an empty dictionary {}
     data_post = post.get("data", {})
 
-    # FILTRO 1: Ignora posts "fijados" (stickied/pinned)
-    # Los posts fijados son anuncios o avisos importantes del moderador
-    # data_post.get("pinned"): retorna True/False, None si no existe
+    # FILTER 1: Ignore "stickied" (pinned) posts
+    # Stickied posts are usually announcements or moderator messages
+    # data_post.get("pinned"): returns True/False, or None if not present
     if data_post.get("pinned"):
-        # continue: salta este post y va al siguiente en el bucle
+        # continue: skip this post and move to the next iteration
         continue
 
-    # EXTRACCIÓN DE TEXTO: Obtiene título y contenido para buscar palabras clave
-    # .lower(): convierte a minúsculas para hacer comparación sin importar mayúsculas
-    # Ejemplo: "POLÍTICA" y "política" se tratarán como iguales
+    # TEXT EXTRACTION: Get title and content to search for keywords
+    # .lower(): converts to lowercase for case-insensitive comparison
+    # Example: "POLÍTICA" and "política" will be treated the same
     title = data_post.get("title", "").lower()
     text = data_post.get("selftext", "").lower()
 
-    # COMBINACIÓN: Une título y contenido para hacer una búsqueda más completa
-    # Separamos con espacio para evitar que palabras se junten
+    # COMBINATION: Merge title and content for a more complete search
+    # A space is added to prevent words from merging
     contenido = title + " " + text
 
-    # FILTRO 2: Evita posts vacíos o muy cortos (menos de 20 caracteres)
-    # .strip(): elimina espacios en blanco al inicio y final
-    # len(): cuenta el número de caracteres
+    # FILTER 2: Skip empty or very short posts (less than 20 characters)
+    # .strip(): removes leading and trailing whitespace
+    # len(): counts number of characters
     if len(contenido.strip()) < 20:
-        # Salta posts muy cortos que probablemente no son relevantes
+        # Skip very short posts that are likely not relevant
         continue
 
-    # FILTRO 3: Busca si ALGUNA palabra clave está en el contenido
-    # any(): retorna True si AL MENOS UNA condición es verdadera
-    # (k in contenido for k in keywords): verifica cada palabra clave
-    # Ejemplo: if "petro" in contenido or "uribe" in contenido or ...
+    # FILTER 3: Check if ANY keyword exists in the content
+    # any(): returns True if AT LEAST ONE condition is True
+    # (k in contenido for k in keywords): checks each keyword
+    # Example: if "petro" in contenido or "uribe" in contenido or ...
     if any(k in contenido for k in keywords):
-        # Si encuentra al menos una palabra clave, agrega el post a la lista filtrada
-        # Creamos un diccionario con los datos principales del post
+        # If at least one keyword is found, add the post to filtered list
+        # Create a dictionary with the main post data
         filtered_posts.append({
-            "title": data_post.get("title", ""),              # Título original (sin minúsculas)
-            "text": data_post.get("selftext", ""),            # Cuerpo del post (si es texto)
-            "author": data_post.get("author", ""),            # Usuario que lo publicó
-            "date": data_post.get("created_utc", ""),         # Fecha de creación (timestamp Unix)
-            "score": data_post.get("score", 0),               # Puntos (upvotes - downvotes)
-            # Construye la URL completa al post de Reddit
+            "title": data_post.get("title", ""),              # Original title (not lowercased)
+            "text": data_post.get("selftext", ""),            # Post body (if text-based)
+            "author": data_post.get("author", ""),            # Username of the author
+            "date": data_post.get("created_utc", ""),         # Creation date (Unix timestamp)
+            "score": data_post.get("score", 0),               # Score (upvotes - downvotes)
+            # Build the full Reddit post URL
             "url": "https://reddit.com" + data_post.get("permalink", "")
         })
 
-# ─── Estadísticas ─────────────────────────────
+# ─── Statistics ─────────────────────────────
 
-# Imprime el número total de posts obtenidos de Reddit (máximo 100)
-print(" Posts totales:", len(posts))
-# Imprime cuántos posts contienen palabras políticas (después del filtrado)
-print(" Posts políticos:", len(filtered_posts))
+# Print total number of retrieved posts (max 100)
+print(" Total posts:", len(posts))
+# Print how many posts matched political keywords
+print(" Political posts:", len(filtered_posts))
 
-# ─── Ruta de salida ─────────────────────────────
+# ─── Output Path ─────────────────────────────
 
-# DEFINICIÓN DE RUTA: Define dónde guardar los archivos JSON
-# Path(): crea un objeto de ruta que funciona en Windows, Linux y Mac
-# r"...": raw string (cadena cruda) - interpreta las barras \ como literales, no como escapes
-# Esta es la carpeta donde se guardarán todos los archivos descargados
-output_path = Path(r"Ruta donde guardar los archivos\DataAPI")  # Cambia esta ruta a tu carpeta deseada
+# PATH DEFINITION: Defines where JSON files will be saved
+# Path(): creates a path object that works on Windows, Linux, and Mac
+# r"...": raw string - treats backslashes as literal characters
+# This is the folder where all downloaded files will be stored
+output_path = Path(r"Ruta donde guardar los archivos\DataAPI")  # Change this path to your desired folder
 
-# CREACIÓN DE CARPETA: Crea la carpeta si no existe
-# parents=True: crea también las carpetas padres (más de un nivel)
-# exist_ok=True: no da error si la carpeta ya existe (evita que falle if ya existe)
+# DIRECTORY CREATION: Create the folder if it does not exist
+# parents=True: creates parent directories if needed
+# exist_ok=True: prevents errors if the folder already exists
 output_path.mkdir(parents=True, exist_ok=True)
 
-# GENERACIÓN DE TIMESTAMP: Crea un nombre único con fecha y hora actual
-# datetime.now(): obtiene la fecha y hora actual del sistema
-# strftime(): formatea la fecha según el patrón dado
-# "%Y%m%d_%H%M%S" = AÑO MES DÍA_HORA MINUTO SEGUNDO
-# Ejemplo: "20260321_143045" = 21 de marzo de 2026 a las 14:30:45
+# TIMESTAMP GENERATION: Creates a unique filename using current date and time
+# datetime.now(): gets current system date and time
+# strftime(): formats the date according to the given pattern
+# "%Y%m%d_%H%M%S" = YEAR MONTH DAY_HOUR MINUTE SECOND
+# Example: "20260321_143045" = March 21, 2026 at 14:30:45
 fecha = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-# CONSTRUCCIÓN DEL NOMBRE DE ARCHIVO
-# output_path / f"..." : operador / de Path para concatenar rutas
-# f"...": f-string que interpola variables dentro de llaves {}
-# Resultado: "...DataAPI\reddit_colombia_20260321_143045.json"
+# FILENAME CONSTRUCTION
+# output_path / f"...": Path operator to concatenate paths
+# f"...": f-string to embed variables
+# Result: "...DataAPI\reddit_colombia_20260321_143045.json"
 filename = output_path / f"reddit_colombia_{fecha}.json"
 
-# ─── Guardar JSON ─────────────────────────────
+# ─── Save JSON ─────────────────────────────
 
-# CONDICIONAL: Verifica si se encontraron posts políticos
+# CONDITION: Check if any political posts were found
 if len(filtered_posts) == 0:
-    # Si no hay posts filtrados, muestra advertencia y no crea archivo
-    print("⚠️ No se encontraron posts políticos")
+    # If no posts found, show warning and do not create file
+    print("⚠️ No political posts found")
 else:
-    # Si hay posts, procede a guardar en archivo
+    # If posts exist, proceed to save them
     
-    # APERTURA DE ARCHIVO: Abre el archivo en modo escritura
-    # with open(): gestor de contexto que cierra automáticamente el archivo al terminar
-    # "w": modo escritura (sobrescribe si existe)
-    # encoding="utf-8": permite caracteres especiales (ñ, acentos, emojis)
+    # FILE OPENING: Open file in write mode
+    # with open(): context manager that automatically closes the file
+    # "w": write mode (overwrites if file exists)
+    # encoding="utf-8": supports special characters (ñ, accents, emojis)
     with open(filename, "w", encoding="utf-8") as f:
-        # SERIALIZACIÓN JSON: Convierte la lista de posts a JSON y escribe en archivo
+        # JSON SERIALIZATION: Convert list to JSON and write to file
         json.dump(
-            filtered_posts[:20],        # Toma solo los primeros 20 posts (limita tamaño)
-            f,                          # f: el archivo donde escribir
-            indent=4,                   # Formatea con 4 espacios (legible, no comprimido)
-            ensure_ascii=False          # Mantiene caracteres latinos sin escapar (\u00f1 vs ñ)
+            filtered_posts[:20],        # Take only first 20 posts (limit size)
+            f,                          # File to write into
+            indent=4,                   # Pretty format with 4 spaces
+            ensure_ascii=False          # Preserve Latin characters
         )
 
-    # CONFIRMACIÓN: Imprime mensaje de éxito
-    print(" Archivo guardado en:")
-    # Imprime la ruta completa donde se guardó el archivo
+    # CONFIRMATION: Print success message
+    print(" File saved at:")
+    # Print full path where file was saved
     print(filename)
