@@ -30,8 +30,8 @@ BASE_URL       = "https://www.lasillavacia.com"
 OPINION_URL    = f"{BASE_URL}/opinion/"
 MAX_PAGINAS    = 5
 DELAY          = 2          # Delay in seconds between page requests.
-OUTPUT_DIR     = Path(__file__).resolve().parent / "datalake_bronze"
-OUTPUT_CSV     = OUTPUT_DIR / f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.csv"
+OUTPUT_DIR     = Path(__file__).resolve().parent.parent / "datalake_bronze/dataWebScrapping"
+OUTPUT_CSV     = OUTPUT_DIR / f"LaSillaVacia_{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.csv"
 HEADLESS       = False       # False opens a visible browser window for debugging.
 
 logging.basicConfig(
