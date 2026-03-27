@@ -139,7 +139,7 @@ print(" Political posts:", len(filtered_posts))
 # Path(): creates a path object that works on Windows, Linux, and Mac
 # r"...": raw string - treats backslashes as literal characters
 # This is the folder where all downloaded files will be stored
-output_path = Path(r"Ruta donde guardar los archivos\DataAPI")  # Change this path to your desired folder
+output_path = Path(__file__).resolve().parent.parent / "datalake_bronze/dataAPI" 
 
 # DIRECTORY CREATION: Create the folder if it does not exist
 # parents=True: creates parent directories if needed
