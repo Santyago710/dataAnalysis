@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+
+  airflow-webserver:
+    image: apache/airflow:2.9.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests beautifulsoup4 pandas pyarrow lxml"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./datalake_bronze:/opt/airflow/datalake_bronze
+      - ./datalake_silver:/opt/airflow/datalake_silver
+      - ./datalake_gold:/opt/airflow/datalake_gold
+      - airflow_logs:/opt/airflow/logs
+    user: "50000:0"
+    ports:
+      - "8080:8080"
+    command: webserver
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+      AIRFLOW__CORE__FERNET_KEY: ''
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests beautifulsoup4 pandas pyarrow lxml"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./datalake_bronze:/opt/airflow/datalake_bronze
+      - ./datalake_silver:/opt/airflow/datalake_silver
+      - ./datalake_gold:/opt/airflow/datalake_gold
+      - airflow_logs:/opt/airflow/logs
+    user: "50000:0"
+    command: scheduler
+
+volumes:
+  postgres_db:
+  airflow_logs:
