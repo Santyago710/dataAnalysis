@@ -32,12 +32,10 @@ def scrape_detalle(url: str) -> dict:
 
         soup = BeautifulSoup(r.text, "lxml")
 
-        # Contenido completo
         content = soup.find(class_="entry-content")
         if content:
             resultado["contenido"] = content.get_text(separator=" ", strip=True)
 
-        # Etiquetas desde links rel=tag
         etiquetas = []
         for t in soup.find_all("a", rel="tag"):
             texto = t.get_text(strip=True)
@@ -123,7 +121,6 @@ def bronze_ingestion_dag():
         output_file = BRONZE_PATH / f"lasillavacia_{timestamp}.json"
         articulos = []
 
-        # Paso 1: extraer listado de artículos
         for pagina in range(1, 4):
             url = OPINION_URL if pagina == 1 else f"{OPINION_URL}page/{pagina}/"
             try:
@@ -146,30 +143,25 @@ def bronze_ingestion_dag():
                 print(f"  → {len(items)} artículos en página {pagina}")
 
                 for item in items:
-                    # Título
                     titulo = ""
                     h2 = item.find("h2", class_="entry-title")
                     if h2 and h2.find("a"):
                         titulo = h2.find("a").get_text(strip=True)
 
-                    # URL
                     url_art = ""
                     if h2 and h2.find("a"):
                         url_art = h2.find("a").get("href", "")
 
-                    # Autor
                     autor = ""
                     author_span = item.find("span", class_="author vcard")
                     if author_span and author_span.find("a"):
                         autor = author_span.find("a").get_text(strip=True)
 
-                    # Fecha
                     fecha = ""
                     time_tag = item.find("time", class_="entry-date")
                     if time_tag:
                         fecha = time_tag.get("datetime", time_tag.get_text(strip=True))
 
-                    # Extracto
                     extracto = ""
                     entry_wrapper = item.find("div", class_="entry-wrapper")
                     if entry_wrapper:
@@ -177,7 +169,6 @@ def bronze_ingestion_dag():
                         if p:
                             extracto = p.get_text(strip=True)[:300]
 
-                    # Etiquetas desde clases del article
                     clases = item.get("class", [])
                     etiquetas = [
                         c.replace("tag-", "").replace("-", " ")
@@ -202,7 +193,6 @@ def bronze_ingestion_dag():
                 print(f"⚠️ Error en página {pagina}: {e}")
                 continue
 
-        # Paso 2: enriquecer con contenido completo visitando cada artículo
         print(f"\n📥 Descargando contenido de {len(articulos)} artículos...")
         for i, art in enumerate(articulos):
             if not art.get("url"):
@@ -210,9 +200,11 @@ def bronze_ingestion_dag():
             print(f"  [{i+1}/{len(articulos)}] {art['url']}")
             detalle = scrape_detalle(art["url"])
             art["contenido"] = detalle["contenido"]
-            # Sobreescribir etiquetas con las del artículo individual si hay
             if detalle["etiquetas"]:
                 art["etiquetas"] = detalle["etiquetas"]
+            # Si no hay extracto del listado, tomar primeros 300 chars del contenido
+            if not art["extracto"] and art["contenido"]:
+                art["extracto"] = art["contenido"]
 
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(articulos, f, indent=4, ensure_ascii=False)
@@ -220,7 +212,49 @@ def bronze_ingestion_dag():
         print(f"✅ La Silla Vacía: {len(articulos)} artículos guardados")
         return str(output_file)
 
+    @task()
+    def validate_data(reddit_file: str, lsv_file: str):
+        REQUIRED_REDDIT = {"title", "author", "date", "url", "source"}
+        REQUIRED_LSV = {"titulo", "autor", "fecha", "url", "contenido"}
+        errors = []
+
+        # Validar Reddit
+        with open(reddit_file, "r", encoding="utf-8") as f:
+            reddit_data = json.load(f)
+        print(f"📋 Reddit: {len(reddit_data)} registros")
+        for i, record in enumerate(reddit_data):
+            missing = REQUIRED_REDDIT - set(record.keys())
+            if missing:
+                errors.append(f"Reddit record {i} missing fields: {missing}")
+            if not record.get("title", "").strip():
+                errors.append(f"Reddit record {i} has empty title")
+
+        # Validar La Silla Vacía
+        with open(lsv_file, "r", encoding="utf-8") as f:
+            lsv_data = json.load(f)
+        print(f"📋 La Silla Vacía: {len(lsv_data)} registros")
+        for i, record in enumerate(lsv_data):
+            missing = REQUIRED_LSV - set(record.keys())
+            if missing:
+                errors.append(f"LSV record {i} missing fields: {missing}")
+            if not record.get("titulo", "").strip():
+                errors.append(f"LSV record {i} has empty titulo")
+
+        if errors:
+            print(f"⚠️ Validation warnings ({len(errors)}):")
+            for e in errors:
+                print(f"  - {e}")
+        else:
+            print("✅ Validation passed — all records have required fields")
+
+        return {
+            "reddit_count": len(reddit_data),
+            "lsv_count": len(lsv_data),
+            "warnings": len(errors)
+        }
+
     reddit_file = extract_reddit()
     lsv_file = extract_lasillavacia()
+    validate_data(reddit_file, lsv_file)
 
 bronze_ingestion_dag()
