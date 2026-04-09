@@ -1,3 +1,4 @@
+"DAG de Airflow para la ingestión de datos en la capa Bronze. Extrae información de Reddit y La Silla Vacía, aplicando filtros básicos y validaciones. Guarda los datos crudos en formato JSON para su posterior procesamiento."
 from airflow.decorators import dag, task
 from datetime import datetime
 import requests
