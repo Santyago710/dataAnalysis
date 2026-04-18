@@ -122,7 +122,7 @@ def bronze_ingestion_dag():
         output_file = BRONZE_PATH / f"lasillavacia_{timestamp}.json"
         articulos = []
 
-        for pagina in range(1, 4):
+        for pagina in range(1, 10):
             url = OPINION_URL if pagina == 1 else f"{OPINION_URL}page/{pagina}/"
             try:
                 time.sleep(3)
