@@ -1,0 +1,15 @@
+# Entornos virtuales (Evita subir la carpeta .venv)
+.venv/
+venv/
+env/
+
+# Documentación y guías de implementación
+ENGLISH_DOCUMENTATION.md
+IMPLEMENTATION_SUMMARY.md
+SILVER_PROCESSING_GUIDE.md
+SILVER_README.md
+
+test_silver_processing.py
+
+# ARCHIVOS DE CONFIGURACIÓN SENSIBLE
+.env
