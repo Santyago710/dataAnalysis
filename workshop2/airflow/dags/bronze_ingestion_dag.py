@@ -1,4 +1,8 @@
-"DAG de Airflow para la ingestión de datos en la capa Bronze. Extrae información de Reddit y La Silla Vacía, aplicando filtros básicos y validaciones. Guarda los datos crudos en formato JSON para su posterior procesamiento."
+# DAG de Airflow para la ingestion de datos en la capa Bronze.
+# Extrae informacion de Reddit y La Silla Vacia, aplicando filtros basicos
+# y validaciones. Guarda los datos crudos en formato JSON para su posterior
+# procesamiento.
+
 from airflow.decorators import dag, task
 from datetime import datetime
 import requests
@@ -7,28 +11,42 @@ import time
 from pathlib import Path
 from bs4 import BeautifulSoup
 
+# ---------------------------------------------------------------------------
+# Configuracion global
+# ---------------------------------------------------------------------------
+
 BRONZE_PATH = Path("/opt/airflow/datalake_bronze")
+
 KEYWORDS = [
     "petro", "uribe", "duque", "gobierno", "presidente",
-    "política", "politica", "elecciones", "votar",
-    "congreso", "senado", "reforma", "corrupción",
-    "corrupcion", "estado", "ley", "ministro"
+    "politica", "politica", "elecciones", "votar",
+    "congreso", "senado", "reforma", "corrupcion",
+    "corrupcion", "estado", "ley", "ministro",
 ]
+
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
     "Accept-Language": "es-CO,es;q=0.9",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Referer": "https://www.google.com/",
 }
 
-def scrape_detalle(url: str) -> dict:
-    """Extrae contenido completo y etiquetas de un artículo individual."""
+
+# ---------------------------------------------------------------------------
+# Funcion auxiliar compartida
+# ---------------------------------------------------------------------------
+
+def scrape_detalle(url):
+    """Extrae contenido completo y etiquetas de un articulo individual."""
     resultado = {"contenido": "", "etiquetas": ""}
     try:
         time.sleep(2)
         r = requests.get(url, headers=HEADERS, timeout=20)
         if r.status_code != 200:
-            print(f"⚠️ Detalle {url} retornó {r.status_code}")
+            print("Detalle " + url + " retorno " + str(r.status_code))
             return resultado
 
         soup = BeautifulSoup(r.text, "lxml")
@@ -45,35 +63,43 @@ def scrape_detalle(url: str) -> dict:
         resultado["etiquetas"] = ", ".join(etiquetas)
 
     except Exception as e:
-        print(f"⚠️ Error scraping detalle {url}: {e}")
+        print("Error scraping detalle " + url + ": " + str(e))
 
     return resultado
 
+
+# ---------------------------------------------------------------------------
+# DAG
+# ---------------------------------------------------------------------------
 
 @dag(
     dag_id="bronze_ingestion",
     schedule_interval="@daily",
     start_date=datetime(2026, 1, 1),
     catchup=False,
-    tags=["bronze", "ingestion"]
+    tags=["bronze", "ingestion"],
 )
 def bronze_ingestion_dag():
+
+    # -----------------------------------------------------------------------
+    # Task 1: Reddit
+    # -----------------------------------------------------------------------
 
     @task()
     def extract_reddit():
         BRONZE_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = BRONZE_PATH / f"reddit_{timestamp}.json"
+        output_file = BRONZE_PATH / ("reddit_" + timestamp + ".json")
 
         try:
             time.sleep(2)
             url = "https://api.reddit.com/r/Colombia/new?limit=100"
             headers = {"User-Agent": "DataAnalysisProject/1.0 (academic; udistrital)"}
             response = requests.get(url, headers=headers, timeout=20)
-            print(f"Reddit status: {response.status_code}")
+            print("Reddit status: " + str(response.status_code))
 
             if response.status_code != 200:
-                print(f"⚠️ Reddit error {response.status_code}")
+                print("Reddit error " + str(response.status_code))
                 with open(output_file, "w", encoding="utf-8") as f:
                     json.dump([], f)
                 return str(output_file)
@@ -97,165 +123,230 @@ def bronze_ingestion_dag():
                         "score": d.get("score", 0),
                         "url": "https://reddit.com" + d.get("permalink", ""),
                         "source": "reddit",
-                        "ingested_at": timestamp
+                        "ingested_at": timestamp,
                     })
 
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump(filtered[:20], f, indent=4, ensure_ascii=False)
 
-            print(f"✅ Reddit: {len(filtered)} posts guardados")
+            print("Reddit: " + str(len(filtered)) + " posts guardados")
 
         except Exception as e:
-            print(f"⚠️ Excepción Reddit: {e}")
+            print("Excepcion Reddit: " + str(e))
             with open(output_file, "w", encoding="utf-8") as f:
                 json.dump([], f)
 
         return str(output_file)
 
+    # -----------------------------------------------------------------------
+    # Task 2: La Silla Vacia
+    # -----------------------------------------------------------------------
+
     @task()
     def extract_lasillavacia():
+
         BASE_URL = "https://www.lasillavacia.com"
-        OPINION_URL = f"{BASE_URL}/opinion/"
+        SECTIONS = ["/opinion/", "/silla-llena/", "/analisis/"]
+        MAX_PAGES = 10
+        MAX_ARTICULOS = 150
+        DELAY_PAGE = 3
+        MAX_RETRIES = 3
 
         BRONZE_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = BRONZE_PATH / f"lasillavacia_{timestamp}.json"
+        output_file = BRONZE_PATH / ("lasillavacia_" + timestamp + ".json")
         articulos = []
+        urls_vistas = set()
 
-        for pagina in range(1, 10):
-            url = OPINION_URL if pagina == 1 else f"{OPINION_URL}page/{pagina}/"
-            try:
-                time.sleep(3)
-                response = requests.get(url, headers=HEADERS, timeout=20)
-                print(f"Página {pagina} status: {response.status_code}")
-
-                if response.status_code == 429:
-                    print("⚠️ Rate limit, esperando 15s...")
-                    time.sleep(15)
-                    response = requests.get(url, headers=HEADERS, timeout=20)
-                    if response.status_code != 200:
+        # GET con reintentos y backoff exponencial
+        def fetch_with_retry(url, delay=DELAY_PAGE):
+            for intento in range(1, MAX_RETRIES + 1):
+                try:
+                    time.sleep(delay)
+                    resp = requests.get(url, headers=HEADERS, timeout=20)
+                    if resp.status_code == 200:
+                        return resp
+                    if resp.status_code == 429:
+                        espera = 15 * intento
+                        print("Rate limit en " + url + ", esperando " + str(espera) + "s (intento " + str(intento) + ")")
+                        time.sleep(espera)
                         continue
+                    print("HTTP " + str(resp.status_code) + " en " + url + " (intento " + str(intento) + ")")
+                except Exception as e:
+                    print("Error en " + url + " intento " + str(intento) + ": " + str(e))
+                    time.sleep(5 * intento)
+            return None
 
-                if response.status_code != 200:
+        # Parsear articulos de una pagina de listado
+        def parsear_pagina(soup):
+            items = soup.find_all("article", attrs={"data-post-id": True})
+            resultado = []
+
+            for item in items:
+                url_art = ""
+                h2 = item.find("h2", class_="entry-title")
+                if h2 and h2.find("a"):
+                    url_art = h2.find("a").get("href", "").strip()
+                if not url_art or url_art in urls_vistas:
                     continue
+                urls_vistas.add(url_art)
 
-                soup = BeautifulSoup(response.text, "lxml")
-                items = soup.find_all("article", attrs={"data-post-id": True})
-                print(f"  → {len(items)} artículos en página {pagina}")
+                titulo = h2.find("a").get_text(strip=True) if h2 and h2.find("a") else ""
 
-                for item in items:
-                    titulo = ""
-                    h2 = item.find("h2", class_="entry-title")
-                    if h2 and h2.find("a"):
-                        titulo = h2.find("a").get_text(strip=True)
+                autor = ""
+                author_span = item.find("span", class_="author vcard")
+                if author_span and author_span.find("a"):
+                    autor = author_span.find("a").get_text(strip=True)
 
-                    url_art = ""
-                    if h2 and h2.find("a"):
-                        url_art = h2.find("a").get("href", "")
+                fecha = ""
+                time_tag = item.find("time", class_="entry-date")
+                if time_tag:
+                    fecha = time_tag.get("datetime", time_tag.get_text(strip=True))
 
-                    autor = ""
-                    author_span = item.find("span", class_="author vcard")
-                    if author_span and author_span.find("a"):
-                        autor = author_span.find("a").get_text(strip=True)
+                extracto = ""
+                entry_wrapper = item.find("div", class_="entry-wrapper")
+                if entry_wrapper:
+                    p = entry_wrapper.find("p")
+                    if p:
+                        extracto = p.get_text(strip=True)[:300]
 
-                    fecha = ""
-                    time_tag = item.find("time", class_="entry-date")
-                    if time_tag:
-                        fecha = time_tag.get("datetime", time_tag.get_text(strip=True))
+                clases = item.get("class", [])
+                etiquetas = [
+                    c.replace("tag-", "").replace("-", " ")
+                    for c in clases
+                    if c.startswith("tag-")
+                ]
 
-                    extracto = ""
-                    entry_wrapper = item.find("div", class_="entry-wrapper")
-                    if entry_wrapper:
-                        p = entry_wrapper.find("p")
-                        if p:
-                            extracto = p.get_text(strip=True)[:300]
+                if titulo:
+                    resultado.append({
+                        "titulo": titulo,
+                        "autor": autor,
+                        "fecha": fecha,
+                        "url": url_art,
+                        "extracto": extracto,
+                        "etiquetas": ", ".join(etiquetas),
+                        "contenido": "",
+                        "fuente": "lasillavacia",
+                        "ingested_at": timestamp,
+                    })
 
-                    clases = item.get("class", [])
-                    etiquetas = [
-                        c.replace("tag-", "").replace("-", " ")
-                        for c in clases
-                        if c.startswith("tag-")
-                    ]
+            return resultado
 
-                    if titulo:
-                        articulos.append({
-                            "titulo": titulo,
-                            "autor": autor,
-                            "fecha": fecha,
-                            "url": url_art,
-                            "extracto": extracto,
-                            "etiquetas": ", ".join(etiquetas),
-                            "contenido": "",
-                            "fuente": "lasillavacia",
-                            "ingested_at": timestamp
-                        })
+        # Detectar si existe pagina siguiente
+        def hay_siguiente(soup):
+            nav = (
+                soup.find("div", class_="nav-links")
+                or soup.find("nav", class_="pagination")
+            )
+            if nav and nav.find("a", class_="next"):
+                return True
+            for a in soup.find_all("a", class_="page-numbers"):
+                if "next" in a.get("class", []):
+                    return True
+            return False
 
-            except Exception as e:
-                print(f"⚠️ Error en página {pagina}: {e}")
-                continue
+        # Scraping de listados por seccion y pagina
+        for seccion in SECTIONS:
+            print("\nSeccion: " + seccion)
 
-        print(f"\n📥 Descargando contenido de {len(articulos)} artículos...")
+            for pagina in range(1, MAX_PAGES + 1):
+                if len(articulos) >= MAX_ARTICULOS:
+                    print("Limite de " + str(MAX_ARTICULOS) + " articulos alcanzado.")
+                    break
+
+                if pagina == 1:
+                    url_pag = BASE_URL + seccion
+                else:
+                    url_pag = BASE_URL + seccion + "page/" + str(pagina) + "/"
+
+                print("Pagina " + str(pagina) + ": " + url_pag)
+
+                resp = fetch_with_retry(url_pag, delay=DELAY_PAGE)
+                if resp is None:
+                    print("No se pudo obtener pagina " + str(pagina) + ", saltando seccion.")
+                    break
+
+                soup = BeautifulSoup(resp.text, "lxml")
+                nuevos = parsear_pagina(soup)
+                articulos.extend(nuevos)
+                print("+" + str(len(nuevos)) + " articulos | total=" + str(len(articulos)))
+
+                if len(nuevos) == 0:
+                    print("Sin articulos nuevos en pagina " + str(pagina) + ", fin de seccion.")
+                    break
+
+                if not hay_siguiente(soup):
+                    print("No hay pagina siguiente, fin de seccion.")
+                    break
+
+        # Descarga de contenido detallado
+        print("\nDescargando contenido de " + str(len(articulos)) + " articulos...")
         for i, art in enumerate(articulos):
             if not art.get("url"):
                 continue
-            print(f"  [{i+1}/{len(articulos)}] {art['url']}")
+            print("[" + str(i + 1) + "/" + str(len(articulos)) + "] " + art["url"])
             detalle = scrape_detalle(art["url"])
             art["contenido"] = detalle["contenido"]
             if detalle["etiquetas"]:
                 art["etiquetas"] = detalle["etiquetas"]
-            # Si no hay extracto del listado, tomar primeros 300 chars del contenido
             if not art["extracto"] and art["contenido"]:
-                art["extracto"] = art["contenido"]
+                art["extracto"] = art["contenido"][:300]
 
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(articulos, f, indent=4, ensure_ascii=False)
 
-        print(f"✅ La Silla Vacía: {len(articulos)} artículos guardados")
+        print("La Silla Vacia: " + str(len(articulos)) + " articulos guardados en " + str(output_file))
         return str(output_file)
 
+    # -----------------------------------------------------------------------
+    # Task 3: Validacion
+    # -----------------------------------------------------------------------
+
     @task()
-    def validate_data(reddit_file: str, lsv_file: str):
+    def validate_data(reddit_file, lsv_file):
         REQUIRED_REDDIT = {"title", "author", "date", "url", "source"}
         REQUIRED_LSV = {"titulo", "autor", "fecha", "url", "contenido"}
         errors = []
 
-        # Validar Reddit
         with open(reddit_file, "r", encoding="utf-8") as f:
             reddit_data = json.load(f)
-        print(f"📋 Reddit: {len(reddit_data)} registros")
+        print("Reddit: " + str(len(reddit_data)) + " registros")
         for i, record in enumerate(reddit_data):
             missing = REQUIRED_REDDIT - set(record.keys())
             if missing:
-                errors.append(f"Reddit record {i} missing fields: {missing}")
+                errors.append("Reddit record " + str(i) + " missing fields: " + str(missing))
             if not record.get("title", "").strip():
-                errors.append(f"Reddit record {i} has empty title")
+                errors.append("Reddit record " + str(i) + " has empty title")
 
-        # Validar La Silla Vacía
         with open(lsv_file, "r", encoding="utf-8") as f:
             lsv_data = json.load(f)
-        print(f"📋 La Silla Vacía: {len(lsv_data)} registros")
+        print("La Silla Vacia: " + str(len(lsv_data)) + " registros")
         for i, record in enumerate(lsv_data):
             missing = REQUIRED_LSV - set(record.keys())
             if missing:
-                errors.append(f"LSV record {i} missing fields: {missing}")
+                errors.append("LSV record " + str(i) + " missing fields: " + str(missing))
             if not record.get("titulo", "").strip():
-                errors.append(f"LSV record {i} has empty titulo")
+                errors.append("LSV record " + str(i) + " has empty titulo")
 
         if errors:
-            print(f"⚠️ Validation warnings ({len(errors)}):")
+            print("Validation warnings (" + str(len(errors)) + "):")
             for e in errors:
-                print(f"  - {e}")
+                print("  - " + e)
         else:
-            print("✅ Validation passed — all records have required fields")
+            print("Validation passed - all records have required fields")
 
         return {
             "reddit_count": len(reddit_data),
             "lsv_count": len(lsv_data),
-            "warnings": len(errors)
+            "warnings": len(errors),
         }
 
+    # -----------------------------------------------------------------------
+    # Orquestacion
+    # -----------------------------------------------------------------------
     reddit_file = extract_reddit()
     lsv_file = extract_lasillavacia()
     validate_data(reddit_file, lsv_file)
+
 
 bronze_ingestion_dag()

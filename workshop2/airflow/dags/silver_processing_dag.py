@@ -60,7 +60,6 @@ def silver_processing_dag():
         SILVER_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Leer todos los JSON de Reddit
         bronze = Path(BRONZE_PATH)
         all_records = []
         for f in sorted(bronze.glob("reddit_*.json")):
@@ -78,7 +77,8 @@ def silver_processing_dag():
         print(f"📥 Reddit raw: {len(df)} registros")
 
         # 1. Deduplicación
-        df = df.drop_duplicates(subset=["url"]).reset_index(drop=True)
+        df = df.drop_duplicates(subset=["url", "title"]).reset_index(drop=True)
+        print(f"📋 Después de deduplicación: {len(df)} registros")
 
         # 2. Tipos de datos
         df["date"] = pd.to_numeric(df["date"], errors="coerce")
@@ -94,11 +94,19 @@ def silver_processing_dag():
         # 4. Eliminar registros sin título
         df = df[df["title"].str.len() > 3].reset_index(drop=True)
 
+        # 4b. Eliminar registros sin URL
+        df = df[df["url"].str.len() > 5].reset_index(drop=True)
+
+        # 4c. Eliminar registros sin texto
+        df = df[df["text"].str.len() > 10].reset_index(drop=True)
+        print(f"📋 Después de limpieza: {len(df)} registros válidos")
+
         # 5. Outliers en score (IQR)
         Q1 = df["score"].quantile(0.25)
         Q3 = df["score"].quantile(0.75)
         IQR = Q3 - Q1
         df = df[df["score"] <= Q3 + 1.5 * IQR].reset_index(drop=True)
+        print(f"📋 Después de outliers: {len(df)} registros")
 
         # 6. Limpieza de texto NLP
         df["title_clean"] = df["title"].apply(clean_text)
@@ -110,6 +118,9 @@ def silver_processing_dag():
             "author", "date", "score", "url", "source_file"
         ]]
 
+        # Convertir timestamps a microsegundos para compatibilidad con PySpark
+        df["date"] = df["date"].astype("datetime64[us]")
+
         output_file = SILVER_PATH / f"reddit_{timestamp}.parquet"
         df.to_parquet(output_file, index=False)
         print(f"✅ Reddit Silver: {len(df)} registros → {output_file}")
@@ -120,7 +131,6 @@ def silver_processing_dag():
         SILVER_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Leer todos los JSON de La Silla Vacía
         bronze = Path(BRONZE_PATH)
         all_records = []
         for f in sorted(bronze.glob("lasillavacia_*.json")):
@@ -139,10 +149,10 @@ def silver_processing_dag():
 
         # 1. Deduplicación
         df = df.drop_duplicates(subset=["url"]).reset_index(drop=True)
+        print(f"📋 Después de deduplicación: {len(df)} registros")
 
         # 2. Tipos de datos
-        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
-
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce", utc=True).dt.tz_localize(None).astype("datetime64[us]")
         # 3. Nulos
         df["titulo"] = df["titulo"].fillna("").str.strip()
         df["autor"] = df["autor"].fillna("Desconocido")
@@ -153,6 +163,11 @@ def silver_processing_dag():
 
         # 4. Eliminar registros sin título
         df = df[df["titulo"].str.len() > 3].reset_index(drop=True)
+
+        # 4b. Eliminar registros sin URL o sin contenido
+        df = df[df["url"].str.len() > 5].reset_index(drop=True)
+        df = df[df["contenido"].str.len() > 50].reset_index(drop=True)
+        print(f"📋 Después de limpieza: {len(df)} registros válidos")
 
         # 5. Limpieza de texto NLP
         df["titulo_clean"] = df["titulo"].apply(clean_text)
@@ -165,6 +180,9 @@ def silver_processing_dag():
             "extracto", "extracto_clean", "contenido", "contenido_clean",
             "etiquetas", "url", "fuente", "source_file"
         ]]
+
+        # Convertir timestamps a microsegundos para compatibilidad con PySpark
+        df["fecha"] = df["fecha"].astype("datetime64[us]")
 
         output_file = SILVER_PATH / f"lasillavacia_{timestamp}.parquet"
         df.to_parquet(output_file, index=False)
