@@ -191,6 +191,7 @@ def gold_processing_dag():
             return
 
         df_all = reduce(DataFrame.union, all_dfs)
+        df_all = df_all.dropDuplicates(["url"])
 
         # 1. Volumen por fuente y fecha
         volume_trend = df_all.groupBy("source", "fecha") \
