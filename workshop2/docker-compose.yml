@@ -25,8 +25,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ''
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      _PIP_ADDITIONAL_REQUIREMENTS: "requests beautifulsoup4 pandas pyarrow lxml pyspark"
-      JAVA_HOME: "/usr/lib/jvm/java-17-openjdk-amd64"
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests beautifulsoup4 pandas pyarrow lxml"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./datalake_bronze:/opt/airflow/datalake_bronze
@@ -48,8 +47,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ''
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-      _PIP_ADDITIONAL_REQUIREMENTS: "requests beautifulsoup4 pandas>=2.2.0 pyarrow lxml pyspark"
-      JAVA_HOME: "/usr/lib/jvm/java-17-openjdk-amd64"
+      _PIP_ADDITIONAL_REQUIREMENTS: "requests beautifulsoup4 pandas pyarrow lxml"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
       - ./datalake_bronze:/opt/airflow/datalake_bronze
