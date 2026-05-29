@@ -1,3 +1,5 @@
+"""Airflow DAG for transforming Bronze data into the Silver layer."""
+
 from airflow.decorators import dag, task
 from airflow.sensors.filesystem import FileSensor
 from datetime import datetime
@@ -19,6 +21,7 @@ STOPWORDS_ES = {
 }
 
 def clean_text(text: str) -> str:
+    """Normalize and tokenize Spanish text for lightweight NLP cleaning."""
     if not isinstance(text, str):
         return ""
     text = text.lower()
@@ -37,6 +40,7 @@ def clean_text(text: str) -> str:
     tags=["silver", "processing"]
 )
 def silver_processing_dag():
+    """Define the Silver processing DAG and task dependencies."""
     wait_for_reddit = FileSensor(
         task_id="wait_for_reddit",
         filepath=BRONZE_PATH + "/reddit_*.json",
@@ -60,7 +64,7 @@ def silver_processing_dag():
         SILVER_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Leer todos los JSON de Reddit
+        # Read all Reddit JSON files from Bronze.
         bronze = Path(BRONZE_PATH)
         all_records = []
         for f in sorted(bronze.glob("reddit_*.json")):
@@ -71,40 +75,40 @@ def silver_processing_dag():
                 all_records.extend(data)
 
         if not all_records:
-            print("⚠️ No hay datos de Reddit para procesar")
+            print("⚠️ No Reddit data available to process")
             return
 
         df = pd.DataFrame(all_records)
         print(f"📥 Reddit raw: {len(df)} registros")
 
-        # 1. Deduplicación
+        # 1) De-duplication
         df = df.drop_duplicates(subset=["url"]).reset_index(drop=True)
 
-        # 2. Tipos de datos
+        # 2) Data types and parsing
         df["date"] = pd.to_numeric(df["date"], errors="coerce")
         df["date"] = pd.to_datetime(df["date"], unit="s", errors="coerce")
         df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(0).astype(int)
 
-        # 3. Nulos
+        # 3) Null handling and defaults
         df["title"] = df["title"].fillna("").str.strip()
         df["text"] = df["text"].fillna("")
         df["author"] = df["author"].fillna("unknown")
         df["source_file"] = df["source_file"].fillna("")
 
-        # 4. Eliminar registros sin título
+        # 4) Drop records without a meaningful title
         df = df[df["title"].str.len() > 3].reset_index(drop=True)
 
-        # 5. Outliers en score (IQR)
+        # 5) Score outliers via IQR
         Q1 = df["score"].quantile(0.25)
         Q3 = df["score"].quantile(0.75)
         IQR = Q3 - Q1
         df = df[df["score"] <= Q3 + 1.5 * IQR].reset_index(drop=True)
 
-        # 6. Limpieza de texto NLP
+        # 6) Lightweight NLP text cleaning
         df["title_clean"] = df["title"].apply(clean_text)
         df["text_clean"] = df["text"].apply(clean_text)
 
-        # 7. Schema final
+        # 7) Final schema
         df = df[[
             "title", "title_clean", "text", "text_clean",
             "author", "date", "score", "url", "source_file"
@@ -120,7 +124,7 @@ def silver_processing_dag():
         SILVER_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Leer todos los JSON de La Silla Vacía
+        # Read all La Silla Vacia JSON files from Bronze.
         bronze = Path(BRONZE_PATH)
         all_records = []
         for f in sorted(bronze.glob("lasillavacia_*.json")):
@@ -131,19 +135,19 @@ def silver_processing_dag():
                 all_records.extend(data)
 
         if not all_records:
-            print("⚠️ No hay datos de La Silla Vacía para procesar")
+            print("⚠️ No La Silla Vacia data available to process")
             return
 
         df = pd.DataFrame(all_records)
         print(f"📥 La Silla Vacía raw: {len(df)} registros")
 
-        # 1. Deduplicación
+        # 1) De-duplication
         df = df.drop_duplicates(subset=["url"]).reset_index(drop=True)
 
-        # 2. Tipos de datos
+        # 2) Data types and parsing
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
 
-        # 3. Nulos
+        # 3) Null handling and defaults
         df["titulo"] = df["titulo"].fillna("").str.strip()
         df["autor"] = df["autor"].fillna("Desconocido")
         df["extracto"] = df["extracto"].fillna("")
@@ -151,15 +155,15 @@ def silver_processing_dag():
         df["etiquetas"] = df["etiquetas"].fillna("")
         df["source_file"] = df["source_file"].fillna("")
 
-        # 4. Eliminar registros sin título
+        # 4) Drop records without a meaningful title
         df = df[df["titulo"].str.len() > 3].reset_index(drop=True)
 
-        # 5. Limpieza de texto NLP
+        # 5) Lightweight NLP text cleaning
         df["titulo_clean"] = df["titulo"].apply(clean_text)
         df["contenido_clean"] = df["contenido"].apply(clean_text)
         df["extracto_clean"] = df["extracto"].apply(clean_text)
 
-        # 6. Schema final
+        # 6) Final schema
         df = df[[
             "titulo", "titulo_clean", "autor", "fecha",
             "extracto", "extracto_clean", "contenido", "contenido_clean",

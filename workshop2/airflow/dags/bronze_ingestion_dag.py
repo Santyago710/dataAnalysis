@@ -1,4 +1,9 @@
-"DAG de Airflow para la ingestión de datos en la capa Bronze. Extrae información de Reddit y La Silla Vacía, aplicando filtros básicos y validaciones. Guarda los datos crudos en formato JSON para su posterior procesamiento."
+"""Airflow DAG for Bronze-layer ingestion.
+
+This workflow collects raw data from Reddit and La Silla Vacia, applies
+lightweight filtering and validation, and persists the results as JSON files
+in the Bronze data lake for downstream processing.
+"""
 from airflow.decorators import dag, task
 from datetime import datetime
 import requests
@@ -22,7 +27,14 @@ HEADERS = {
 }
 
 def scrape_detalle(url: str) -> dict:
-    """Extrae contenido completo y etiquetas de un artículo individual."""
+    """Fetch the full article content and tags for a single La Silla Vacia URL.
+
+    Args:
+        url: Article URL to scrape.
+
+    Returns:
+        Dictionary with keys: "contenido" and "etiquetas".
+    """
     resultado = {"contenido": "", "etiquetas": ""}
     try:
         time.sleep(2)
@@ -58,9 +70,11 @@ def scrape_detalle(url: str) -> dict:
     tags=["bronze", "ingestion"]
 )
 def bronze_ingestion_dag():
+    """Define the Bronze ingestion DAG and task dependencies."""
 
     @task()
     def extract_reddit():
+        """Pull recent r/Colombia posts and persist filtered items to Bronze."""
         BRONZE_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = BRONZE_PATH / f"reddit_{timestamp}.json"
@@ -114,6 +128,7 @@ def bronze_ingestion_dag():
 
     @task()
     def extract_lasillavacia():
+        """Scrape opinion articles from La Silla Vacia and persist to Bronze."""
         BASE_URL = "https://www.lasillavacia.com"
         OPINION_URL = f"{BASE_URL}/opinion/"
 
@@ -215,6 +230,15 @@ def bronze_ingestion_dag():
 
     @task()
     def validate_data(reddit_file: str, lsv_file: str):
+        """Validate required fields and basic integrity of ingested files.
+
+        Args:
+            reddit_file: Path to the Reddit JSON file.
+            lsv_file: Path to the La Silla Vacia JSON file.
+
+        Returns:
+            Summary with record counts and warning count.
+        """
         REQUIRED_REDDIT = {"title", "author", "date", "url", "source"}
         REQUIRED_LSV = {"titulo", "autor", "fecha", "url", "contenido"}
         errors = []
