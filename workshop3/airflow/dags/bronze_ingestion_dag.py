@@ -1,7 +1,6 @@
-# DAG de Airflow para la ingestion de datos en la capa Bronze.
-# Extrae informacion de Reddit y La Silla Vacia, aplicando filtros basicos
-# y validaciones. Guarda los datos crudos en formato JSON para su posterior
-# procesamiento.
+# Airflow DAG for ingesting data into the Bronze layer.
+# It extracts content from Reddit and La Silla Vacia with basic filtering
+# and validation, then stores raw JSON for downstream processing.
 
 from airflow.decorators import dag, task
 from datetime import datetime
@@ -12,7 +11,7 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 # ---------------------------------------------------------------------------
-# Configuracion global
+# Global configuration
 # ---------------------------------------------------------------------------
 
 BRONZE_PATH = Path("/opt/airflow/datalake_bronze")
@@ -36,11 +35,11 @@ HEADERS = {
 
 
 # ---------------------------------------------------------------------------
-# Funcion auxiliar compartida
+# Shared helper function
 # ---------------------------------------------------------------------------
 
 def scrape_detalle(url):
-    """Extrae contenido completo y etiquetas de un articulo individual."""
+    """Fetch full article content and tags from a detail page."""
     resultado = {"contenido": "", "etiquetas": ""}
     try:
         time.sleep(2)
@@ -158,7 +157,7 @@ def bronze_ingestion_dag():
         articulos = []
         urls_vistas = set()
 
-        # GET con reintentos y backoff exponencial
+        # GET with retries and exponential backoff
         def fetch_with_retry(url, delay=DELAY_PAGE):
             for intento in range(1, MAX_RETRIES + 1):
                 try:
@@ -177,7 +176,7 @@ def bronze_ingestion_dag():
                     time.sleep(5 * intento)
             return None
 
-        # Parsear articulos de una pagina de listado
+        # Parse articles from a listing page
         def parsear_pagina(soup):
             items = soup.find_all("article", attrs={"data-post-id": True})
             resultado = []
@@ -232,7 +231,7 @@ def bronze_ingestion_dag():
 
             return resultado
 
-        # Detectar si existe pagina siguiente
+        # Detect whether a next page exists
         def hay_siguiente(soup):
             nav = (
                 soup.find("div", class_="nav-links")
@@ -245,7 +244,7 @@ def bronze_ingestion_dag():
                     return True
             return False
 
-        # Scraping de listados por seccion y pagina
+        # Scrape listings by section and page
         for seccion in SECTIONS:
             print("\nSeccion: " + seccion)
 
@@ -279,7 +278,7 @@ def bronze_ingestion_dag():
                     print("No hay pagina siguiente, fin de seccion.")
                     break
 
-        # Descarga de contenido detallado
+        # Download detailed content for each article
         print("\nDescargando contenido de " + str(len(articulos)) + " articulos...")
         for i, art in enumerate(articulos):
             if not art.get("url"):
@@ -299,7 +298,7 @@ def bronze_ingestion_dag():
         return str(output_file)
 
     # -----------------------------------------------------------------------
-    # Task 3: Validacion
+    # Task 3: Validation
     # -----------------------------------------------------------------------
 
     @task()
@@ -342,7 +341,7 @@ def bronze_ingestion_dag():
         }
 
     # -----------------------------------------------------------------------
-    # Orquestacion
+    # Orchestration
     # -----------------------------------------------------------------------
     reddit_file = extract_reddit()
     lsv_file = extract_lasillavacia()

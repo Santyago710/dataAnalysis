@@ -14,6 +14,10 @@ GOLD_PATH = "/opt/airflow/datalake_gold"
 )
 def gold_processing_dag():
 
+    # -----------------------------------------------------------------------
+    # Task 1: Data governance profiling (quality metrics for Silver datasets)
+    # -----------------------------------------------------------------------
+
     @task()
     def governance_summary():
         from pyspark.sql import SparkSession
@@ -116,6 +120,7 @@ def gold_processing_dag():
             })
             print(f"✅ La Silla Vacia governance: {total} registros procesados")
 
+        # Persist the governance summary in a single Gold snapshot
         import pandas as pd
         df_gov = pd.DataFrame(results)
         output = f"{GOLD_PATH}/governance_{timestamp}.parquet"
@@ -185,6 +190,7 @@ def gold_processing_dag():
             )
             all_dfs.append(df_sel)
 
+        # Stop early when no Silver inputs are available
         if not all_dfs:
             print("⚠️ No hay datos Silver para procesar")
             spark.stop()
@@ -193,7 +199,7 @@ def gold_processing_dag():
         df_all = reduce(DataFrame.union, all_dfs)
         df_all = df_all.dropDuplicates(["url"])
 
-        # 1. Volumen por fuente y fecha
+        # 1. Volume by source and date
         volume_trend = df_all.groupBy("source", "fecha") \
             .agg(F.count("*").alias("record_count")) \
             .orderBy("fecha") \
@@ -211,7 +217,7 @@ def gold_processing_dag():
             .limit(50) \
             .toPandas()
 
-        # 3. Score promedio por fecha (Reddit)
+        # 3. Average score by date (Reddit)
         score_trend = df_all.filter(F.col("source") == "reddit") \
             .groupBy("fecha") \
             .agg(
@@ -221,7 +227,7 @@ def gold_processing_dag():
             .orderBy("fecha") \
             .toPandas()
 
-        # 4. Top autores por fuente
+        # 4. Top authors by source
         top_authors = df_all.groupBy("autor", "source") \
             .agg(F.count("*").alias("article_count")) \
             .orderBy(F.desc("article_count")) \
@@ -237,6 +243,9 @@ def gold_processing_dag():
         spark.stop()
         return f"{GOLD_PATH}/storytelling_volume_{timestamp}.parquet"
 
+    # -----------------------------------------------------------------------
+    # Orchestration
+    # -----------------------------------------------------------------------
     governance_summary()
     storytelling_summary()
 
