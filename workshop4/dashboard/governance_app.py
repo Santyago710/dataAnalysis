@@ -8,14 +8,18 @@ from pathlib import Path
 from datetime import datetime
 
 # ── Data Loading ────────────────────────────────────────────────────────────
+# Gold layer location for governance KPIs.
 GOLD_PATH = Path("../datalake_gold")
 
+# Load the newest governance parquet file (by modification time).
 def load_latest_governance():
-    files = sorted(GOLD_PATH.glob("governance_*.parquet"))
+    files = list(GOLD_PATH.glob("governance_*.parquet"))
     if not files:
         return pd.DataFrame()
-    return pd.read_parquet(files[-1])
+    latest_file = max(files, key=lambda f: f.stat().st_mtime)
+    return pd.read_parquet(latest_file)
 
+# Cache data and timestamp for the dashboard header.
 df = load_latest_governance()
 last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -27,6 +31,7 @@ app = dash.Dash(
 )
 
 # ── Helper: KPI Card ─────────────────────────────────────────────────────────
+# Build a consistent Bootstrap card for top-level metrics.
 def kpi_card(title, value, color="primary"):
     return dbc.Card(
         dbc.CardBody([
@@ -37,6 +42,7 @@ def kpi_card(title, value, color="primary"):
     )
 
 # ── Layout ───────────────────────────────────────────────────────────────────
+# Compose the dashboard sections: header, KPIs, charts, and a data table.
 app.layout = dbc.Container([
 
     # Header
@@ -107,6 +113,7 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 # ── Callbacks ────────────────────────────────────────────────────────────────
+# Render a grouped bar chart of null rates by field and source.
 @app.callback(
     dash.Output("null-rate-chart", "figure"),
     dash.Input("null-rate-chart", "id")
@@ -139,6 +146,7 @@ def update_null_rate(_):
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white")
     return fig
 
+# Render duplicate rate per data source.
 @app.callback(
     dash.Output("duplicate-rate-chart", "figure"),
     dash.Input("duplicate-rate-chart", "id")
@@ -165,6 +173,7 @@ def update_duplicate_rate(_):
     )
     return fig
 
+# Render title/content length stats for each source.
 @app.callback(
     dash.Output("text-length-chart", "figure"),
     dash.Input("text-length-chart", "id")
@@ -187,6 +196,7 @@ def update_text_length(_):
     )
     return fig
 
+# Render Reddit score stats (min/mean/median/max).
 @app.callback(
     dash.Output("score-stats-chart", "figure"),
     dash.Input("score-stats-chart", "id")
@@ -209,5 +219,6 @@ def update_score_stats(_):
     )
     return fig
 
+# Local dev entrypoint.
 if __name__ == "__main__":
     app.run(debug=True, port=8050)

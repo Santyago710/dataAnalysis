@@ -2,9 +2,11 @@ from airflow.decorators import dag, task
 from datetime import datetime
 from pathlib import Path
 
+# Base storage paths for curated (Gold) and cleaned (Silver) layers.
 SILVER_PATH = "/opt/airflow/datalake_silver"
 GOLD_PATH = "/opt/airflow/datalake_gold"
 
+# Weekly Gold pipeline that creates governance and storytelling outputs.
 @dag(
     dag_id="gold_processing",
     schedule_interval="@weekly",
@@ -16,11 +18,13 @@ def gold_processing_dag():
 
     @task()
     def governance_summary():
+        # Local imports keep task dependencies explicit and isolated.
         from pyspark.sql import SparkSession
         from pyspark.sql import functions as F
         from pathlib import Path
         import pandas as pd
 
+        # Initialize a local Spark session optimized for small batch workloads.
         spark = SparkSession.builder \
             .master("local[*]") \
             .appName("GoldGovernance") \
@@ -32,11 +36,13 @@ def gold_processing_dag():
             .config("spark.sql.parquet.enableVectorizedReader", "false") \
             .getOrCreate()
 
+        # Reduce verbosity and prepare output paths.
         spark.sparkContext.setLogLevel("ERROR")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         Path(GOLD_PATH).mkdir(parents=True, exist_ok=True)
         results = []
 
+        # Compute governance metrics for Reddit data if available.
         reddit_files = list(Path(SILVER_PATH).glob("reddit_*.parquet"))
         if reddit_files:
             df_reddit = spark.read.parquet(*[str(f) for f in reddit_files])
@@ -46,6 +52,7 @@ def gold_processing_dag():
             null_text = df_reddit.filter(F.col("text").isNull() | (F.col("text") == "")).count()
             null_url = df_reddit.filter(F.col("url").isNull() | (F.col("url") == "")).count()
             dup_count = total - df_reddit.dropDuplicates(["url"]).count()
+            # Basic score distribution and title-length stats.
             score_stats = df_reddit.select(
                 F.mean("score").alias("score_mean"),
                 F.expr("percentile(score, 0.5)").alias("score_median"),
@@ -57,6 +64,7 @@ def gold_processing_dag():
                 F.min(F.length("title")).alias("title_len_min"),
                 F.max(F.length("title")).alias("title_len_max")
             ).collect()[0]
+            # Consolidate governance metrics into a single record.
             results.append({
                 "source": "reddit",
                 "total_records": total,
@@ -76,6 +84,7 @@ def gold_processing_dag():
             })
             print(f"✅ Reddit governance: {total} registros procesados")
 
+        # Compute governance metrics for La Silla Vacia data if available.
         lsv_files = list(Path(SILVER_PATH).glob("lasillavacia_*.parquet"))
         if lsv_files:
             df_lsv = spark.read.parquet(*[str(f) for f in lsv_files])
@@ -90,6 +99,7 @@ def gold_processing_dag():
                 F.min(F.length("contenido")).alias("contenido_len_min"),
                 F.max(F.length("contenido")).alias("contenido_len_max")
             ).collect()[0]
+            # Align schema with Reddit governance output for reporting consistency.
             results.append({
                 "source": "lasillavacia",
                 "total_records": total,
@@ -109,6 +119,7 @@ def gold_processing_dag():
             })
             print(f"✅ La Silla Vacia governance: {total} registros procesados")
 
+        # Persist governance metrics as a single Gold parquet file.
         df_gov = pd.DataFrame(results)
         output = f"{GOLD_PATH}/governance_{timestamp}.parquet"
         df_gov.to_parquet(output, index=False)
@@ -118,6 +129,7 @@ def gold_processing_dag():
 
     @task()
     def storytelling_summary():
+        # Local imports keep task dependencies explicit and isolated.
         from pyspark.sql import SparkSession
         from pyspark.sql import functions as F
         from pyspark.sql.types import StringType, FloatType
@@ -126,6 +138,7 @@ def gold_processing_dag():
         from pyspark.sql import DataFrame
         import pandas as pd
 
+        # Initialize a local Spark session optimized for small batch workloads.
         spark = SparkSession.builder \
             .master("local[*]") \
             .appName("GoldStorytelling") \
@@ -137,11 +150,13 @@ def gold_processing_dag():
             .config("spark.sql.parquet.enableVectorizedReader", "false") \
             .getOrCreate()
 
+        # Reduce verbosity and prepare output paths.
         spark.sparkContext.setLogLevel("ERROR")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         Path(GOLD_PATH).mkdir(parents=True, exist_ok=True)
         all_dfs = []
 
+        # Normalize Reddit schema to the storytelling model.
         reddit_files = list(Path(SILVER_PATH).glob("reddit_*.parquet"))
         if reddit_files:
             df = spark.read.parquet(*[str(f) for f in reddit_files])
@@ -159,6 +174,7 @@ def gold_processing_dag():
             )
             all_dfs.append(df_sel)
 
+        # Normalize La Silla Vacia schema to the storytelling model.
         lsv_files = list(Path(SILVER_PATH).glob("lasillavacia_*.parquet"))
         if lsv_files:
             df = spark.read.parquet(*[str(f) for f in lsv_files])
@@ -176,15 +192,17 @@ def gold_processing_dag():
             )
             all_dfs.append(df_sel)
 
+        # Exit early when there is no Silver data to process.
         if not all_dfs:
             print("⚠️ No hay datos Silver para procesar")
             spark.stop()
             return
 
+        # Union all sources and remove duplicate URLs.
         df_all = reduce(DataFrame.union, all_dfs)
         df_all = df_all.dropDuplicates(["url"])
 
-        # Funciones de sentimiento definidas localmente
+        # Local sentiment functions based on simple word dictionaries.
         def analyze_sentiment_local(text):
             if not isinstance(text, str) or len(text.strip()) == 0:
                 return "neutral"
@@ -219,6 +237,7 @@ def gold_processing_dag():
                 return "negative"
             return "neutral"
 
+        # Polarity score for trend analysis (-1 to 1).
         def get_polarity_local(text):
             if not isinstance(text, str) or len(text.strip()) == 0:
                 return 0.0
@@ -248,19 +267,21 @@ def gold_processing_dag():
                 return 0.0
             return round((pos - neg) / total, 4)
 
+        # Register UDFs for sentiment labeling and polarity scoring.
         sentiment_udf = F.udf(analyze_sentiment_local, StringType())
         polarity_udf = F.udf(get_polarity_local, FloatType())
 
+        # Enrich with sentiment features.
         df_all = df_all.withColumn("sentiment", sentiment_udf(F.col("contenido_clean")))
         df_all = df_all.withColumn("polarity", polarity_udf(F.col("contenido_clean")))
 
-        # 1. Volumen por fuente y fecha
+        # 1. Volume by source and date.
         volume_trend = df_all.groupBy("source", "fecha") \
             .agg(F.count("*").alias("record_count")) \
             .orderBy("fecha") \
             .toPandas()
 
-        # 2. Top keywords
+        # 2. Top keywords by frequency.
         words_df = df_all.select(
             F.explode(F.split(F.col("contenido_clean"), " ")).alias("word"),
             F.col("source")
@@ -271,7 +292,7 @@ def gold_processing_dag():
             .limit(50) \
             .toPandas()
 
-        # 3. Score promedio por fecha (Reddit)
+        # 3. Average Reddit score by date.
         score_trend = df_all.filter(F.col("source") == "reddit") \
             .groupBy("fecha") \
             .agg(
@@ -281,19 +302,19 @@ def gold_processing_dag():
             .orderBy("fecha") \
             .toPandas()
 
-        # 4. Top autores por fuente
+        # 4. Top authors by source.
         top_authors = df_all.groupBy("autor", "source") \
             .agg(F.count("*").alias("article_count")) \
             .orderBy(F.desc("article_count")) \
             .limit(20) \
             .toPandas()
 
-        # 5. Distribución de sentimiento
+        # 5. Sentiment distribution by source.
         sentiment_dist = df_all.groupBy("source", "sentiment") \
             .agg(F.count("*").alias("count")) \
             .toPandas()
 
-        # 6. Tendencia de sentimiento por fecha
+        # 6. Sentiment trend by date and source.
         sentiment_trend = df_all.groupBy("fecha", "source") \
             .agg(
                 F.mean("polarity").alias("avg_polarity"),
@@ -302,6 +323,7 @@ def gold_processing_dag():
             .orderBy("fecha") \
             .toPandas()
 
+        # Persist all storytelling datasets to Gold.
         volume_trend.to_parquet(f"{GOLD_PATH}/storytelling_volume_{timestamp}.parquet", index=False)
         top_keywords.to_parquet(f"{GOLD_PATH}/storytelling_keywords_{timestamp}.parquet", index=False)
         score_trend.to_parquet(f"{GOLD_PATH}/storytelling_score_trend_{timestamp}.parquet", index=False)
@@ -313,7 +335,9 @@ def gold_processing_dag():
         spark.stop()
         return f"{GOLD_PATH}/storytelling_volume_{timestamp}.parquet"
 
+    # Run both Gold tasks (independent execution paths).
     governance_summary()
     storytelling_summary()
 
+# Register the DAG with Airflow.
 gold_processing_dag()

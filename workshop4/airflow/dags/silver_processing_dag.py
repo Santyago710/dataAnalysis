@@ -6,9 +6,11 @@ import re
 import pandas as pd
 from pathlib import Path
 
+# Base storage paths for raw (Bronze) and cleaned (Silver) layers.
 BRONZE_PATH = "/opt/airflow/datalake_bronze"
 SILVER_PATH = Path("/opt/airflow/datalake_silver")
 
+# Spanish stopwords used for basic NLP cleaning.
 STOPWORDS_ES = {
     "de", "la", "el", "en", "y", "a", "los", "las", "un", "una",
     "es", "se", "no", "con", "por", "que", "del", "al", "lo", "su",
@@ -18,6 +20,7 @@ STOPWORDS_ES = {
     "quien", "desde", "todo", "nos", "durante", "uno", "ni", "contra"
 }
 
+# Basic text normalization and stopword removal for NLP fields.
 def clean_text(text: str) -> str:
     if not isinstance(text, str):
         return ""
@@ -29,6 +32,7 @@ def clean_text(text: str) -> str:
     return " ".join(tokens)
 
 
+# Silver processing DAG: waits for Bronze files and cleans data to parquet.
 @dag(
     dag_id="silver_processing",
     schedule_interval=None,
@@ -37,6 +41,7 @@ def clean_text(text: str) -> str:
     tags=["silver", "processing"]
 )
 def silver_processing_dag():
+    # Wait for Reddit JSON files to appear in Bronze.
     wait_for_reddit = FileSensor(
         task_id="wait_for_reddit",
         filepath=BRONZE_PATH + "/reddit_*.json",
@@ -46,6 +51,7 @@ def silver_processing_dag():
         fs_conn_id="fs_default"
     )
 
+    # Wait for La Silla Vacia JSON files to appear in Bronze.
     wait_for_lsv = FileSensor(
         task_id="wait_for_lsv",
         filepath=BRONZE_PATH + "/lasillavacia_*.json",
@@ -57,6 +63,7 @@ def silver_processing_dag():
 
     @task()
     def process_reddit():
+        # Load all Reddit Bronze files into a single DataFrame.
         SILVER_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -76,49 +83,49 @@ def silver_processing_dag():
         df = pd.DataFrame(all_records)
         print(f"📥 Reddit raw: {len(df)} registros")
 
-        # 1. Deduplicación
+        # 1. De-duplicate by URL and title.
         df = df.drop_duplicates(subset=["url", "title"]).reset_index(drop=True)
         print(f"📋 Después de deduplicación: {len(df)} registros")
 
-        # 2. Tipos de datos
+        # 2. Data types and coercion.
         df["date"] = pd.to_numeric(df["date"], errors="coerce")
         df["date"] = pd.to_datetime(df["date"], unit="s", errors="coerce")
         df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(0).astype(int)
 
-        # 3. Nulos
+        # 3. Null handling and defaults.
         df["title"] = df["title"].fillna("").str.strip()
         df["text"] = df["text"].fillna("")
         df["author"] = df["author"].fillna("unknown")
         df["source_file"] = df["source_file"].fillna("")
 
-        # 4. Eliminar registros sin título
+        # 4. Remove records without a valid title.
         df = df[df["title"].str.len() > 3].reset_index(drop=True)
 
-        # 4b. Eliminar registros sin URL
+        # 4b. Remove records without a valid URL.
         df = df[df["url"].str.len() > 5].reset_index(drop=True)
 
-        # 4c. Eliminar registros sin texto
+        # 4c. Remove records without sufficient text.
         df = df[df["text"].str.len() > 10].reset_index(drop=True)
         print(f"📋 Después de limpieza: {len(df)} registros válidos")
 
-        # 5. Outliers en score (IQR)
+        # 5. Score outliers removal using IQR.
         Q1 = df["score"].quantile(0.25)
         Q3 = df["score"].quantile(0.75)
         IQR = Q3 - Q1
         df = df[df["score"] <= Q3 + 1.5 * IQR].reset_index(drop=True)
         print(f"📋 Después de outliers: {len(df)} registros")
 
-        # 6. Limpieza de texto NLP
+        # 6. NLP text cleaning.
         df["title_clean"] = df["title"].apply(clean_text)
         df["text_clean"] = df["text"].apply(clean_text)
 
-        # 7. Schema final
+        # 7. Final schema selection.
         df = df[[
             "title", "title_clean", "text", "text_clean",
             "author", "date", "score", "url", "source_file"
         ]]
 
-        # Convertir timestamps a microsegundos para compatibilidad con PySpark
+        # Convert timestamps to microseconds for PySpark compatibility.
         df["date"] = df["date"].astype("datetime64[us]")
 
         output_file = SILVER_PATH / f"reddit_{timestamp}.parquet"
@@ -128,6 +135,7 @@ def silver_processing_dag():
 
     @task()
     def process_lasillavacia():
+        # Load all La Silla Vacia Bronze files into a single DataFrame.
         SILVER_PATH.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -147,13 +155,13 @@ def silver_processing_dag():
         df = pd.DataFrame(all_records)
         print(f"📥 La Silla Vacía raw: {len(df)} registros")
 
-        # 1. Deduplicación
+        # 1. De-duplicate by URL.
         df = df.drop_duplicates(subset=["url"]).reset_index(drop=True)
         print(f"📋 Después de deduplicación: {len(df)} registros")
 
-        # 2. Tipos de datos
+        # 2. Data types and coercion.
         df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce", utc=True).dt.tz_localize(None).astype("datetime64[us]")
-        # 3. Nulos
+        # 3. Null handling and defaults.
         df["titulo"] = df["titulo"].fillna("").str.strip()
         df["autor"] = df["autor"].fillna("Desconocido")
         df["extracto"] = df["extracto"].fillna("")
@@ -161,27 +169,27 @@ def silver_processing_dag():
         df["etiquetas"] = df["etiquetas"].fillna("")
         df["source_file"] = df["source_file"].fillna("")
 
-        # 4. Eliminar registros sin título
+        # 4. Remove records without a valid title.
         df = df[df["titulo"].str.len() > 3].reset_index(drop=True)
 
-        # 4b. Eliminar registros sin URL o sin contenido
+        # 4b. Remove records without a valid URL or enough content.
         df = df[df["url"].str.len() > 5].reset_index(drop=True)
         df = df[df["contenido"].str.len() > 50].reset_index(drop=True)
         print(f"📋 Después de limpieza: {len(df)} registros válidos")
 
-        # 5. Limpieza de texto NLP
+        # 5. NLP text cleaning.
         df["titulo_clean"] = df["titulo"].apply(clean_text)
         df["contenido_clean"] = df["contenido"].apply(clean_text)
         df["extracto_clean"] = df["extracto"].apply(clean_text)
 
-        # 6. Schema final
+        # 6. Final schema selection.
         df = df[[
             "titulo", "titulo_clean", "autor", "fecha",
             "extracto", "extracto_clean", "contenido", "contenido_clean",
             "etiquetas", "url", "fuente", "source_file"
         ]]
 
-        # Convertir timestamps a microsegundos para compatibilidad con PySpark
+        # Convert timestamps to microseconds for PySpark compatibility.
         df["fecha"] = df["fecha"].astype("datetime64[us]")
 
         output_file = SILVER_PATH / f"lasillavacia_{timestamp}.parquet"
@@ -189,7 +197,9 @@ def silver_processing_dag():
         print(f"✅ La Silla Vacía Silver: {len(df)} registros → {output_file}")
         return str(output_file)
 
+    # Orchestrate: each processor waits for its corresponding Bronze files.
     wait_for_reddit >> process_reddit()
     wait_for_lsv >> process_lasillavacia()
 
+# Register the DAG with Airflow.
 silver_processing_dag()

@@ -8,14 +8,18 @@ from pathlib import Path
 from datetime import datetime
 
 # ── Data Loading ─────────────────────────────────────────────────────────────
+# Gold layer location for storytelling outputs.
 GOLD_PATH = Path("../datalake_gold")
 
+# Load the newest parquet file (by modification time) matching a pattern.
 def load_latest(pattern):
-    files = sorted(GOLD_PATH.glob(pattern))
+    files = list(GOLD_PATH.glob(pattern))
     if not files:
         return pd.DataFrame()
-    return pd.read_parquet(files[-1])
+    latest_file = max(files, key=lambda f: f.stat().st_mtime)
+    return pd.read_parquet(latest_file)
 
+# Load the latest storytelling datasets from Gold.
 df_volume = load_latest("storytelling_volume_*.parquet")
 df_keywords = load_latest("storytelling_keywords_*.parquet")
 df_score = load_latest("storytelling_score_trend_*.parquet")
@@ -23,6 +27,7 @@ df_authors = load_latest("storytelling_authors_*.parquet")
 df_sentiment_dist = load_latest("storytelling_sentiment_dist_*.parquet")
 df_sentiment_trend = load_latest("storytelling_sentiment_trend_*.parquet")
 
+# Timestamp for the header (runtime, not data time).
 last_updated = datetime.now().strftime("%Y-%m-%d %H:%M")
 
 # ── App Setup ─────────────────────────────────────────────────────────────────
@@ -32,18 +37,21 @@ app = dash.Dash(
     title="Storytelling Dashboard"
 )
 
+# Color palette for sentiment labels.
 SENTIMENT_COLORS = {
     "positive": "#2ecc71",
     "negative": "#e74c3c",
     "neutral": "#95a5a6"
 }
 
+# Color palette for sources.
 SOURCE_COLORS = {
     "reddit": "#FF6B6B",
     "lasillavacia": "#4ECDC4"
 }
 
 # ── Layout ────────────────────────────────────────────────────────────────────
+# Compose narrative sections and visual insights for the storytelling view.
 app.layout = dbc.Container([
 
     # Header
@@ -108,6 +116,7 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
+# Sentiment distribution by source (bar facets).
 @app.callback(
     dash.Output("sentiment-dist-chart", "figure"),
     dash.Input("sentiment-dist-chart", "id")
@@ -125,6 +134,7 @@ def update_sentiment_dist(_):
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white", showlegend=False)
     return fig
 
+# Sentiment trend over time by source (line chart).
 @app.callback(
     dash.Output("sentiment-trend-chart", "figure"),
     dash.Input("sentiment-trend-chart", "id")
@@ -142,6 +152,7 @@ def update_sentiment_trend(_):
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white")
     return fig
 
+# Publication volume over time by source.
 @app.callback(
     dash.Output("volume-chart", "figure"),
     dash.Input("volume-chart", "id")
@@ -158,6 +169,7 @@ def update_volume(_):
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white")
     return fig
 
+# Top 20 keywords across sources.
 @app.callback(
     dash.Output("keywords-chart", "figure"),
     dash.Input("keywords-chart", "id")
@@ -176,6 +188,7 @@ def update_keywords(_):
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white", yaxis={"categoryorder": "total ascending"})
     return fig
 
+# Stacked sentiment share by source (percentage).
 @app.callback(
     dash.Output("source-comparison-chart", "figure"),
     dash.Input("source-comparison-chart", "id")
@@ -213,6 +226,7 @@ def update_source_comparison(_):
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white")
     return fig
 
+# Reddit score trend over time.
 @app.callback(
     dash.Output("score-trend-chart", "figure"),
     dash.Input("score-trend-chart", "id")
@@ -229,5 +243,6 @@ def update_score_trend(_):
     fig.update_layout(plot_bgcolor="white", paper_bgcolor="white")
     return fig
 
+# Local dev entrypoint.
 if __name__ == "__main__":
     app.run(debug=True, port=8051)
