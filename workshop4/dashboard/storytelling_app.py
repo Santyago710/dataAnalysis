@@ -83,6 +83,13 @@ app.layout = dbc.Container([
         ])
     ], className="mb-4"),
 
+    # Overall Sentiment Donut Chart (NEW)
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(id="overall-sentiment-donut")
+        ], md=12)
+    ], className="mb-4"),
+
     # Sentiment Distribution
     dbc.Row([
         dbc.Col([
@@ -116,6 +123,59 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 # ── Callbacks ─────────────────────────────────────────────────────────────────
+
+# NEW: Overall sentiment donut chart
+@app.callback(
+    dash.Output("overall-sentiment-donut", "figure"),
+    dash.Input("overall-sentiment-donut", "id")
+)
+def update_overall_donut(_):
+    if df_sentiment_dist.empty:
+        return go.Figure()
+    
+    # Aggregate counts across all sources
+    overall_counts = df_sentiment_dist.groupby("sentiment")["count"].sum().reset_index()
+    
+    # Normalize sentiment strings
+    overall_counts["sentiment"] = overall_counts["sentiment"].astype(str).str.strip().str.lower()
+    
+    # Filter only valid sentiments
+    overall_counts = overall_counts[overall_counts["sentiment"].isin(SENTIMENT_COLORS)]
+    
+    if overall_counts.empty:
+        return go.Figure()
+    
+    # Create donut chart
+    fig = go.Figure(data=[go.Pie(
+        labels=overall_counts["sentiment"],
+        values=overall_counts["count"],
+        hole=0.4,  # This creates the donut effect
+        marker_colors=[SENTIMENT_COLORS[s] for s in overall_counts["sentiment"]],
+        textinfo="label+percent",
+        textposition="auto",
+        hoverinfo="label+value+percent",
+        pull=[0.05, 0, 0]  # Slightly pull the largest slice if needed
+    )])
+    
+    fig.update_layout(
+        title={
+            'text': "🎯 Overall Sentiment Breakdown (All Sources)",
+            'x': 0.5,
+            'xanchor': 'center'
+        },
+        annotations=[dict(
+            text=f"Total: {overall_counts['count'].sum():,}",
+            x=0.5, y=0.5,
+            font_size=14,
+            showarrow=False
+        )],
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        height=450
+    )
+    
+    return fig
+
 # Sentiment distribution by source (bar facets).
 @app.callback(
     dash.Output("sentiment-dist-chart", "figure"),
