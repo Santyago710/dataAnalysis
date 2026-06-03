@@ -22,7 +22,7 @@ This project analyzes political and social discourse in Colombia through a Medal
 - Data collected: article title, content, author, publication date, tags
 
 ---
-
+```
 ## 📂 Repository Structure
 dataAnalysis/
 ├── workshop1/                  # Workshop 1 — Project Definition
@@ -55,10 +55,11 @@ dataAnalysis/
 │   ├── notebooks/
 │   └── docker-compose.yml
 └── README.md
-
+```
 ---
 
 ## 🏗️ Pipeline Architecture
+```
 Reddit API ──┐                              ┌── governance.parquet
 ├── Bronze (JSON) ── Silver ───┤
 La Silla ───┘    (Airflow DAG)  (Pandas)   └── storytelling_*.parquet
@@ -68,7 +69,7 @@ La Silla ───┘    (Airflow DAG)  (Pandas)   └── storytelling_*.parq
 Governance              Storytelling
 Dashboard               Dashboard
 (port 8050)             (port 8051)
-
+```
 ---
 
 ## 🚀 How to Run Each Workshop
