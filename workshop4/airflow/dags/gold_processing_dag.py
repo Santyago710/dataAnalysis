@@ -207,23 +207,51 @@ def gold_processing_dag():
             if not isinstance(text, str) or len(text.strip()) == 0:
                 return "neutral"
             positive_words = {
-                "bien", "bueno", "buena", "excelente", "positivo", "positiva",
-                "éxito", "logro", "avance", "progreso", "esperanza", "mejor",
-                "desarrollo", "beneficio", "apoyo", "favor", "correcto", "justo",
-                "paz", "acuerdo", "solución", "oportunidad", "crecimiento",
-                "inversión", "empleo", "salud", "educación", "seguridad",
-                "victoria", "triunfo", "alegría", "libre", "libertad",
-                "democracia", "transparencia", "honesto"
-            }
+    # Original
+    "bien", "bueno", "buena", "excelente", "positivo", "positiva",
+    "éxito", "logro", "avance", "progreso", "esperanza", "mejor",
+    "desarrollo", "beneficio", "apoyo", "favor", "correcto", "justo",
+    "paz", "acuerdo", "solución", "oportunidad", "crecimiento",
+    "inversión", "empleo", "salud", "educación", "seguridad",
+    "victoria", "triunfo", "alegría", "libre", "libertad",
+    "democracia", "transparencia", "honesto",
+    # Político colombiano
+    "reforma", "cambio", "transformación", "mejora", "mejoría",
+    "recuperación", "estabilidad", "confianza", "credibilidad",
+    "diálogo", "negociación", "concertación", "reconciliación",
+    "inclusión", "equidad", "justicia", "derechos", "garantías",
+    "protección", "bienestar", "prosperidad", "fortalecimiento",
+    "modernización", "innovación", "competitividad", "productividad",
+    "subsidio", "beneficio", "ayuda", "apoyo", "respaldo",
+    "reconocimiento", "premio", "destacado", "exitoso", "efectivo"
+}
             negative_words = {
-                "malo", "mala", "mal", "terrible", "pésimo", "negativo",
-                "fracaso", "problema", "crisis", "corrupción", "corrupto",
-                "robo", "mentira", "fraude", "violencia", "guerra", "conflicto",
-                "pobreza", "desempleo", "inflación", "escándalo", "injusto",
-                "ilegal", "criminal", "crimen", "impunidad", "dictadura",
-                "represión", "desastre", "caos", "peor", "desigualdad",
-                "hambre", "miseria", "muerte", "asesinato", "secuestro"
-            }
+    # Original
+    "malo", "mala", "mal", "terrible", "pésimo", "negativo",
+    "fracaso", "problema", "crisis", "corrupción", "corrupto",
+    "robo", "mentira", "fraude", "violencia", "guerra", "conflicto",
+    "pobreza", "desempleo", "inflación", "escándalo", "injusto",
+    "ilegal", "criminal", "crimen", "impunidad", "dictadura",
+    "represión", "desastre", "caos", "peor", "desigualdad",
+    "hambre", "miseria", "muerte", "asesinato", "secuestro",
+    # Político colombiano
+    "denuncia", "denuncias", "acusación", "acusaciones", "acusado",
+    "investigado", "investigación", "cuestionado", "polémico", "polémica",
+    "irregularidad", "irregularidades", "fallo", "demanda", "demandas",
+    "protesta", "protestas", "huelga", "bloqueo", "bloqueos",
+    "escasez", "desabastecimiento", "deuda", "déficit", "impuesto",
+    "sanciones", "sanción", "destitución", "destituido", "suspendido",
+    "capturado", "detenido", "preso", "condenado", "sentenciado",
+    "corruptos", "ladrones", "roban", "robando", "malversación",
+    "clientelismo", "nepotismo", "burocracia", "ineficiencia",
+    "abandono", "abandonado", "olvidado", "excluido", "marginalizado",
+    "desplazado", "refugiado", "víctima", "víctimas", "afectado",
+    "deterioro", "empeoró", "empeorar", "decayó", "retroceso",
+    "incumplimiento", "incumplió", "promesa", "mentiras", "engaño",
+    "manipulación", "manipulado", "censurado", "censura",
+    "polarización", "división", "enfrentamiento", "choque",
+    "inestabilidad", "incertidumbre", "riesgo", "amenaza", "peligro"
+}
             words = text.lower().split()
             pos = sum(1 for w in words if w in positive_words)
             neg = sum(1 for w in words if w in negative_words)
@@ -241,24 +269,52 @@ def gold_processing_dag():
         def get_polarity_local(text):
             if not isinstance(text, str) or len(text.strip()) == 0:
                 return 0.0
-            positive_words = {
-                "bien", "bueno", "buena", "excelente", "positivo", "positiva",
-                "éxito", "logro", "avance", "progreso", "esperanza", "mejor",
-                "desarrollo", "beneficio", "apoyo", "favor", "correcto", "justo",
-                "paz", "acuerdo", "solución", "oportunidad", "crecimiento",
-                "inversión", "empleo", "salud", "educación", "seguridad",
-                "victoria", "triunfo", "alegría", "libre", "libertad",
-                "democracia", "transparencia", "honesto"
-            }
             negative_words = {
-                "malo", "mala", "mal", "terrible", "pésimo", "negativo",
-                "fracaso", "problema", "crisis", "corrupción", "corrupto",
-                "robo", "mentira", "fraude", "violencia", "guerra", "conflicto",
-                "pobreza", "desempleo", "inflación", "escándalo", "injusto",
-                "ilegal", "criminal", "crimen", "impunidad", "dictadura",
-                "represión", "desastre", "caos", "peor", "desigualdad",
-                "hambre", "miseria", "muerte", "asesinato", "secuestro"
-            }
+    # Original
+    "malo", "mala", "mal", "terrible", "pésimo", "negativo",
+    "fracaso", "problema", "crisis", "corrupción", "corrupto",
+    "robo", "mentira", "fraude", "violencia", "guerra", "conflicto",
+    "pobreza", "desempleo", "inflación", "escándalo", "injusto",
+    "ilegal", "criminal", "crimen", "impunidad", "dictadura",
+    "represión", "desastre", "caos", "peor", "desigualdad",
+    "hambre", "miseria", "muerte", "asesinato", "secuestro",
+    # Político colombiano
+    "denuncia", "denuncias", "acusación", "acusaciones", "acusado",
+    "investigado", "investigación", "cuestionado", "polémico", "polémica",
+    "irregularidad", "irregularidades", "fallo", "demanda", "demandas",
+    "protesta", "protestas", "huelga", "bloqueo", "bloqueos",
+    "escasez", "desabastecimiento", "deuda", "déficit", "impuesto",
+    "sanciones", "sanción", "destitución", "destituido", "suspendido",
+    "capturado", "detenido", "preso", "condenado", "sentenciado",
+    "corruptos", "ladrones", "roban", "robando", "malversación",
+    "clientelismo", "nepotismo", "burocracia", "ineficiencia",
+    "abandono", "abandonado", "olvidado", "excluido", "marginalizado",
+    "desplazado", "refugiado", "víctima", "víctimas", "afectado",
+    "deterioro", "empeoró", "empeorar", "decayó", "retroceso",
+    "incumplimiento", "incumplió", "promesa", "mentiras", "engaño",
+    "manipulación", "manipulado", "censurado", "censura",
+    "polarización", "división", "enfrentamiento", "choque",
+    "inestabilidad", "incertidumbre", "riesgo", "amenaza", "peligro"
+}
+            positive_words = {
+    # Original
+    "bien", "bueno", "buena", "excelente", "positivo", "positiva",
+    "éxito", "logro", "avance", "progreso", "esperanza", "mejor",
+    "desarrollo", "beneficio", "apoyo", "favor", "correcto", "justo",
+    "paz", "acuerdo", "solución", "oportunidad", "crecimiento",
+    "inversión", "empleo", "salud", "educación", "seguridad",
+    "victoria", "triunfo", "alegría", "libre", "libertad",
+    "democracia", "transparencia", "honesto",
+    # Político colombiano
+    "reforma", "cambio", "transformación", "mejora", "mejoría",
+    "recuperación", "estabilidad", "confianza", "credibilidad",
+    "diálogo", "negociación", "concertación", "reconciliación",
+    "inclusión", "equidad", "justicia", "derechos", "garantías",
+    "protección", "bienestar", "prosperidad", "fortalecimiento",
+    "modernización", "innovación", "competitividad", "productividad",
+    "subsidio", "beneficio", "ayuda", "apoyo", "respaldo",
+    "reconocimiento", "premio", "destacado", "exitoso", "efectivo"
+}
             words = text.lower().split()
             pos = sum(1 for w in words if w in positive_words)
             neg = sum(1 for w in words if w in negative_words)
@@ -323,6 +379,18 @@ def gold_processing_dag():
             .orderBy("fecha") \
             .toPandas()
 
+                # 7. Top keywords by sentiment.
+        words_sentiment = df_all.select(
+            F.explode(F.split(F.col("contenido_clean"), " ")).alias("word"),
+            F.col("sentiment"),
+            F.col("source")
+        ).filter(F.length("word") > 3)
+        keywords_sentiment = words_sentiment.groupBy("word", "sentiment", "source") \
+            .agg(F.count("*").alias("frequency")) \
+            .orderBy(F.desc("frequency")) \
+            .limit(300) \
+            .toPandas()
+
         # Persist all storytelling datasets to Gold.
         volume_trend.to_parquet(f"{GOLD_PATH}/storytelling_volume_{timestamp}.parquet", index=False)
         top_keywords.to_parquet(f"{GOLD_PATH}/storytelling_keywords_{timestamp}.parquet", index=False)
@@ -330,8 +398,9 @@ def gold_processing_dag():
         top_authors.to_parquet(f"{GOLD_PATH}/storytelling_authors_{timestamp}.parquet", index=False)
         sentiment_dist.to_parquet(f"{GOLD_PATH}/storytelling_sentiment_dist_{timestamp}.parquet", index=False)
         sentiment_trend.to_parquet(f"{GOLD_PATH}/storytelling_sentiment_trend_{timestamp}.parquet", index=False)
+        keywords_sentiment.to_parquet(f"{GOLD_PATH}/storytelling_keywords_sentiment_{timestamp}.parquet", index=False)
 
-        print(f"✅ Storytelling saved: 6 archivos en {GOLD_PATH}")
+        print(f"✅ Storytelling saved: 7 archivos en {GOLD_PATH}")
         spark.stop()
         return f"{GOLD_PATH}/storytelling_volume_{timestamp}.parquet"
 
